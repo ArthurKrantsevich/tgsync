@@ -91,10 +91,12 @@ func setupWith(t *testing.T, wrap func(*telegram.Fake) telegram.API) *fx {
 	_, _ = tp.EnsureControl(ctx)
 	br := permissions.NewBroker(api, st)
 	ag := &agent.Fake{}
-	mgr := session.NewManager(session.Deps{API: api, Store: st, Topics: tp, Broker: br, Runner: ag, MaxParallel: 2})
+	g := &group.Group{API: api, Store: st, Topics: tp}
+	ctrl := g.ControlAPI(api) // as in cmd/tgsync: /usage reaches the control topic through the manager
+	mgr := session.NewManager(session.Deps{API: ctrl, Store: st, Topics: tp, Broker: br, Runner: ag, MaxParallel: 2})
 	t.Cleanup(mgr.Shutdown)
-	g := &group.Group{API: api, Store: st, Topics: tp, Forget: mgr.TopicRemoved}
-	r := &Router{Allowed: func(id int64) bool { return id == owner }, API: g.ControlAPI(api), ChatID: -1001234567890, ClaudeHome: t.TempDir(),
+	g.Forget = mgr.TopicRemoved
+	r := &Router{Allowed: func(id int64) bool { return id == owner }, API: ctrl, ChatID: -1001234567890, ClaudeHome: t.TempDir(),
 		Topics: tp, Projects: projects.Registry{Root: root}, Sessions: mgr, Broker: br, Group: g}
 	return &fx{r: r, api: api, ag: ag, st: st, root: root}
 }
@@ -126,6 +128,23 @@ func TestControlTopicSweep(t *testing.T) {
 	f.r.Handle(ctx, telegram.Update{UserID: owner, ThreadID: control, CallbackID: "cb2", CallbackData: "cl:sweep"})
 	if a := f.api.Answers(); a[len(a)-1] != "Чистить нечего" {
 		t.Fatalf("answers: %v", a)
+	}
+}
+
+// /usage in the node topic is a control message like any other: swept, and
+// it does not replace the menu.
+func TestControlUsageIsSwept(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	control := f.r.Topics.Control()
+	f.r.Handle(ctx, telegram.Update{UserID: owner, ThreadID: control, MessageID: 500, Text: "/menu"})
+	f.r.Handle(ctx, telegram.Update{UserID: owner, ThreadID: control, MessageID: 501, Text: "/usage"})
+	if msgs := f.api.Messages(control); len(msgs) != 2 {
+		t.Fatalf("menu and usage must both stay until the sweep: %+v", msgs)
+	}
+	f.r.Handle(ctx, telegram.Update{UserID: owner, ThreadID: control, CallbackID: "cb", CallbackData: "cl:sweep"})
+	if msgs := f.api.Messages(control); len(msgs) != 0 {
+		t.Fatalf("left after the sweep: %+v", msgs)
 	}
 }
 

@@ -30,13 +30,13 @@
 | `ALLOWED_USER_IDS: invalid user id "…"` | Не положительное число (например, `@username`) | Числовые id от @userinfobot через запятую. |
 | `PROJECTS_ROOT must be an absolute path` | `~/projects` или относительный путь | Полный путь: `/home/user/projects`. `~` не раскрывается. |
 | `MAX_PARALLEL_SESSIONS must be a positive integer` | `0`, отрицательное или текст | `1` или больше. |
-| `IDLE_TIMEOUT: нужна длительность вроде 30m или 2h, получено "…"` — так же для `STALL_WARN`, `REMIND_EVERY`, `MAX_TURN_DURATION`, `STT_TIMEOUT` | Число без единицы (`120`) или отрицательное | Добавь единицу: `120m`, `2h`. Просто `0` выключает. |
+| `IDLE_TIMEOUT must be a duration like 30m or 2h, got "…"` — так же для `STALL_WARN`, `REMIND_EVERY`, `MAX_TURN_DURATION`, `STT_TIMEOUT` | Число без единицы (`120`) или отрицательное | Добавь единицу: `120m`, `2h`. Просто `0` выключает. |
 | `SUDO_MODE must be off, env or telegram` | Опечатка | Одно из трёх. |
 | `SUDO_MODE=env requires SUDO_PASSWORD` | В режиме `env` пустой пароль | Задай `SUDO_PASSWORD` или выбери другой режим. |
 | `SHOW_HOOK_OUTPUT must be true or false` | Другое значение | `true`/`false`. |
 | `STT_URL must be an http(s) URL like http://127.0.0.1:8000` | Нет схемы (`127.0.0.1:8000`) | Допиши `http://`. |
 | `STT_MAX_SECONDS must be a positive integer` | `0`, отрицательное, текст | Положительное число секунд. |
-| `TGSYNC_HOME=…: папка не существует` | `TGSYNC_HOME` указывает на несуществующую папку | Создай её или исправь путь. |
+| `TGSYNC_HOME=…: directory does not exist` | `TGSYNC_HOME` указывает на несуществующую папку | Создай её или исправь путь. |
 | `.env: …` | Синтаксическая ошибка в `.env` (например, незакрытая кавычка) | Строки вида `ИМЯ=значение`, кавычки не нужны. |
 | `✗ профили — профиль "…" не найден в profiles.yaml` | `DEFAULT_PROFILE` или `projects.*.profile` ссылается на несуществующий профиль | Опиши его в `profiles.yaml` или используй `full`. |
 | `✗ профили — profiles.yaml: yaml: …` | Ошибка синтаксиса YAML | Проверь отступы: пробелы, не табы. |

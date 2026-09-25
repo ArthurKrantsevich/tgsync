@@ -13,7 +13,7 @@ import (
 func FindHome(getenv func(string) string, cwd, userHome, configDir string, exists func(string) bool) (string, error) {
 	if dir := getenv("TGSYNC_HOME"); dir != "" {
 		if !exists(dir) {
-			return "", fmt.Errorf("TGSYNC_HOME=%s: папка не существует", dir)
+			return "", fmt.Errorf("TGSYNC_HOME=%s: directory does not exist", dir)
 		}
 		return dir, nil
 	}

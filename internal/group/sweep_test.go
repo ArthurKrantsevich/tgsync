@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/limits"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
 )
 
@@ -113,5 +115,28 @@ func TestCardShowsStartAndSweepButton(t *testing.T) {
 	g.Now = func() time.Time { return g.Started.Add(48 * time.Hour) }
 	if text, _ := g.cardText(context.Background()); !strings.Contains(text, "онлайн с 26.09 03:20") {
 		t.Fatalf("other day: %s", text)
+	}
+}
+
+// Limit notices go to the control topic through ControlAPI (see
+// cmd/tgsync): they must be swept like other control messages, and having
+// no buttons they must not replace the menu.
+func TestLimitNoticesAreSweptAndKeepTheMenu(t *testing.T) {
+	g, api, st := setup(t)
+	ctx := context.Background()
+	ctrl := g.ControlAPI(api)
+	menu, _ := ctrl.SendMessage(ctx, g.Topics.Control(), "menu", menuKB(), false)
+	tr := limits.New(ctrl, st, g.Topics.Control)
+	tr.Observe(ctx, 0, agent.RateLimit{Window: "five_hour", Status: "rejected", Utilization: -1})
+	notice := lastControl(g, api)
+	if notice.ID == menu || !strings.Contains(notice.HTML, "исчерпан") {
+		t.Fatalf("no limit notice: %+v", notice)
+	}
+	if got := api.DeletedMessages(); len(got) != 0 {
+		t.Fatalf("a limit notice must not replace the menu, deleted %v", got)
+	}
+	ids, _ := st.TrackedMessages(ctx, g.now().Add(time.Second))
+	if !reflect.DeepEqual(ids, []int{menu, notice.ID}) {
+		t.Fatalf("tracked %v, want menu %d and notice %d", ids, menu, notice.ID)
 	}
 }

@@ -658,8 +658,8 @@ At most 5 files are sent automatically per turn.
 
 ### 9.4 Control topic sweep and menus
 
-- Messages the bot sends to the control topic through the router, and the
-  user's messages there, are recorded in `control_msgs`. Every minute,
+- Messages the bot sends to the control topic (router replies, `/usage`,
+  subscription limit notices), and the user's messages there, are recorded in `control_msgs`. Every minute,
   recorded messages older than 1 hour are deleted. Messages that cannot be
   deleted (already gone, or too old for the Bot API) are forgotten; after a
   temporary failure they are retried. One sweep is limited to 1 minute.
@@ -1007,9 +1007,6 @@ the node folder; run `tgsync check` before registering the service.
 - **Always rules** cannot be listed or removed from Telegram.
 - **Sensitive writes** are auto-allowed in 🟢/🟡 modes (they are `Ask`, not
   `Confirm`).
-- **Control-topic output not swept.** `/usage` and subscription limit notices
-  in the control topic are sent without the sweep wrapper, so they are not
-  deleted after an hour and do not replace the previous menu.
 - **Cleanup has no age threshold.** Every closed session with an existing
   topic is offered for deletion, including ones closed a minute ago.
 - **Peer check** exists only on Linux and macOS; elsewhere the one-time token

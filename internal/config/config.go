@@ -130,7 +130,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		default:
 			v, err := time.ParseDuration(raw)
 			if err != nil || v < 0 {
-				errs = append(errs, fmt.Errorf("%s: нужна длительность вроде 30m или 2h, получено %q", d.key, raw))
+				errs = append(errs, fmt.Errorf("%s must be a duration like 30m or 2h, got %q", d.key, raw))
 			} else {
 				*d.dst = v
 			}
