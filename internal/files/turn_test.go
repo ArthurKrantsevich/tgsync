@@ -6,34 +6,169 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
+func TestMain(m *testing.M) {
+	// Side indexes of the test repos go to a temporary cache, not the user's.
+	cache, err := os.MkdirTemp("", "tgsync-cache-")
+	if err != nil {
+		panic(err)
+	}
+	CacheDir = func() (string, error) { return cache, nil }
+	code := m.Run()
+	os.RemoveAll(cache)
+	os.Exit(code)
+}
+
 // TestSnapshotSeesSameSizeEditInSameSecond: git trusts a file whose size and
 // mtime match its index entry, unless the entry is "racy" (not older than
 // the index file). A snapshot must keep that check, or an edit that keeps
-// the size within the same second is lost.
+// the size within the same second is lost. core.trustctime=false keeps the
+// ctime (which Windows does not change on a write) from hiding a lost edit.
 func TestSnapshotSeesSameSizeEditInSameSecond(t *testing.T) {
 	ctx := context.Background()
-	dir := repo(t, map[string]string{"a.go": "old\n"})
-	at := time.Now().Add(-time.Hour).Truncate(time.Second) // well before any copy of the index
-	stamp := func(name string) {
+	stamp := func(t *testing.T, dir, name string, at time.Time) {
+		t.Helper()
 		if err := os.Chtimes(filepath.Join(dir, name), at, at); err != nil {
 			t.Fatal(err)
 		}
 	}
-	stamp("a.go")
-	gitT(t, dir, "update-index", "--refresh") // the index records a.go at `at`
-	stamp(".git/index")
-	base, _ := Snapshot(ctx, dir)
-	writeT(t, dir, "a.go", "new\n") // same size, same second
-	stamp("a.go")
-	end, _ := Snapshot(ctx, dir)
-	st, err := TurnStats(ctx, dir, base, end, []string{"a.go"})
-	if err != nil || len(st) != 1 || st[0].Added != 1 || st[0].Deleted != 1 {
-		t.Fatalf("the edit was lost: %+v %v", st, err)
+	blob := func(t *testing.T, dir, tree string) string {
+		t.Helper()
+		return gitT(t, dir, "cat-file", "-p", tree+":a.go")
+	}
+	// The side index starts as a copy of the user's index: the copy must
+	// keep the original's mtime, or the user's racy entries look clean.
+	t.Run("user index", func(t *testing.T) {
+		dir := repo(t, map[string]string{"a.go": "old\n"})
+		gitT(t, dir, "config", "core.trustctime", "false")
+		at := time.Now().Add(-time.Hour).Truncate(time.Second)
+		stamp(t, dir, "a.go", at)
+		gitT(t, dir, "update-index", "--refresh") // the index records a.go at `at`
+		stamp(t, dir, ".git/index", at)           // ...and was written in that second
+		writeT(t, dir, "a.go", "new\n")           // same size, same second
+		stamp(t, dir, "a.go", at)
+		base, err := Snapshot(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := blob(t, dir, base); got != "new\n" {
+			t.Fatalf("the edit was lost: %q", got)
+		}
+	})
+	// Later snapshots reuse the side index git wrote: an entry not older
+	// than that write must be checked again.
+	t.Run("side index", func(t *testing.T) {
+		dir := repo(t, map[string]string{"a.go": "old\n"})
+		gitT(t, dir, "config", "core.trustctime", "false")
+		at := time.Now().Add(time.Hour).Truncate(time.Second) // not older than any index write below
+		stamp(t, dir, "a.go", at)
+		base, err := Snapshot(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeT(t, dir, "a.go", "new\n") // same size, same second
+		stamp(t, dir, "a.go", at)
+		end, err := Snapshot(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if blob(t, dir, base) != "old\n" || blob(t, dir, end) != "new\n" {
+			t.Fatalf("the edit was lost: base %q end %q", blob(t, dir, base), blob(t, dir, end))
+		}
+	})
+}
+
+// TestSnapshotReusesStatCacheForUntracked: untracked files are not in the
+// user's index, so only a side index kept between snapshots lets git skip
+// hashing them again. The test changes an untracked file behind git's back
+// (same size and mtime, ctime ignored): a snapshot that trusts its stat
+// cache still sees the old content.
+func TestSnapshotReusesStatCacheForUntracked(t *testing.T) {
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "a\n"})
+	gitT(t, dir, "config", "core.trustctime", "false")
+	at := time.Now().Add(-time.Hour).Truncate(time.Second)
+	writeT(t, dir, "node_modules/x.js", "one\n")
+	if err := os.Chtimes(filepath.Join(dir, "node_modules/x.js"), at, at); err != nil {
+		t.Fatal(err)
+	}
+	first, err := Snapshot(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeT(t, dir, "node_modules/x.js", "two\n")
+	if err := os.Chtimes(filepath.Join(dir, "node_modules/x.js"), at, at); err != nil {
+		t.Fatal(err)
+	}
+	second, err := Snapshot(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("the untracked file was hashed again: the stat cache was not reused")
+	}
+	if idx := gitT(t, dir, "status", "--porcelain"); idx != "?? node_modules/\n" {
+		t.Fatalf("the user's index changed: %q", idx)
+	}
+}
+
+// TestSnapshotFollowsIgnoreRules: the side index remembers untracked files,
+// but a file ignored later leaves the snapshot, while a file the user
+// tracks despite the ignore rules stays in it.
+func TestSnapshotFollowsIgnoreRules(t *testing.T) {
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "a\n", "keep.log": "k\n"})
+	writeT(t, dir, "tmp.log", "t\n")
+	if _, err := Snapshot(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	writeT(t, dir, ".gitignore", "*.log\n")
+	tree, err := Snapshot(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls := gitT(t, dir, "ls-tree", "--name-only", tree)
+	if strings.Contains(ls, "tmp.log") || !strings.Contains(ls, "keep.log") {
+		t.Fatalf("tree: %s", ls)
+	}
+	writeT(t, dir, "forced.log", "f\n")
+	gitT(t, dir, "add", "-f", "forced.log")
+	if tree, err = Snapshot(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	if ls := gitT(t, dir, "ls-tree", "--name-only", tree); !strings.Contains(ls, "forced.log") {
+		t.Fatalf("a file the user added with -f must stay: %s", ls)
+	}
+}
+
+// TestSnapshotRecoversFromBrokenSideIndex: a damaged side index is dropped
+// and seeded again from the user's index.
+func TestSnapshotRecoversFromBrokenSideIndex(t *testing.T) {
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "a\n"})
+	want, err := Snapshot(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	side, err := sidePath(ctx, dir)
+	if err != nil || side == "" {
+		t.Fatalf("side index: %q %v", side, err)
+	}
+	if st, err := os.Stat(side); err != nil {
+		t.Fatal(err)
+	} else if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
+		t.Fatalf("side index mode %v, want 0600", st.Mode().Perm())
+	}
+	if err := os.WriteFile(side, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Snapshot(ctx, dir); err != nil || got != want {
+		t.Fatalf("%q %v, want %q", got, err, want)
 	}
 }
 
