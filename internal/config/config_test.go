@@ -42,6 +42,10 @@ func TestLoadValid(t *testing.T) {
 	if c.SudoMode != "off" {
 		t.Fatalf("SUDO_MODE must default to off: %q", c.SudoMode)
 	}
+	// SUDO_MODE is parsed on Unix; Windows forces it off (TestSudoForcedOffOnWindows).
+	old := goos
+	defer func() { goos = old }()
+	goos = "linux"
 	s := valid()
 	s["SUDO_MODE"], s["SUDO_PASSWORD"] = "env", "pw"
 	if c3, err := Load(env(s)); err != nil || c3.SudoMode != "env" || c3.SudoPassword != "pw" {
