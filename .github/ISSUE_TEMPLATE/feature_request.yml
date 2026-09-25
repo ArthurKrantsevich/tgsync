@@ -1,0 +1,56 @@
+name: Feature request
+description: Suggest an improvement or a new feature for tgsync.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Describing the problem first helps more than a ready-made solution.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+      placeholder: When a long turn runs, I would like to ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How could tgsync solve it? Commands, buttons or settings you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use now or other approaches you thought about.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sessions and topics
+        - Permissions and approve modes
+        - Turn summary (diff, commit, rollback)
+        - Files and voice
+        - Subagents, usage and limits
+        - History and profiles
+        - Setup, service and platforms
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security considerations
+      description: Could this let the agent do more without a tap, or expose more data to Telegram? See docs/en/security.md.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to open a pull request for this.

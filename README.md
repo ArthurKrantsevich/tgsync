@@ -1,56 +1,160 @@
-**English** · [Русский](README.ru.md)
+<div align="center">
 
-# tgsync
+<img src="docs/assets/banner.svg" alt="tgsync — Claude Code in your pocket, over Telegram" width="100%">
 
-Run Claude Code agent sessions on your own machines and drive them from Telegram. Give the agent a task from your phone, watch it work, answer its questions, approve commands, review the diff and commit — while the work itself happens on your computer, with your plugins, skills and hooks.
+<h3>Run Claude Code on your own machines. Drive it from Telegram.</h3>
 
-Each machine running tgsync is a **node** with its own bot. All nodes share one Telegram forum group:
+<p>
+Give the agent a task from your phone, watch it work, approve commands with a tap,<br>
+review the diff and commit — while the code, tools and credentials stay on your computer.
+</p>
 
-- every node has a control topic `🖥 <node name>` with a pinned status card;
-- every agent session gets its own topic.
+<p>
+<a href="https://github.com/ArthurKrantsevich/tgsync/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ArthurKrantsevich/tgsync/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white" alt="CI"></a>
+<a href="https://github.com/ArthurKrantsevich/tgsync/releases"><img src="https://img.shields.io/github/v/release/ArthurKrantsevich/tgsync?sort=semver&logo=github" alt="Latest release"></a>
+<a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/ArthurKrantsevich/tgsync?logo=go&logoColor=white" alt="Go version"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
+<img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-15707f" alt="Platforms: Linux, macOS, Windows">
+<a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"></a>
+</p>
 
-> The bot's interface is currently in Russian. The documentation is available in English and Russian.
+<p><b>English</b> · <a href="README.ru.md">Русский</a></p>
 
-## Why
+<p>
+<a href="#features">Features</a> ·
+<a href="#screenshots">Screenshots</a> ·
+<a href="#quick-start">Quick start</a> ·
+<a href="#documentation">Docs</a> ·
+<a href="#security">Security</a>
+</p>
 
-Claude Code works best on a real machine with your repositories, toolchains and credentials. Long tasks, though, do not need you at the keyboard. tgsync keeps the agent where your code lives and moves only the conversation to Telegram, so you can start, steer and review work from anywhere, and every risky action still waits for your tap.
+</div>
+
+---
+
+## Why tgsync
+
+Claude Code works best on a real machine — with your repositories, toolchains, plugins, skills and hooks. Long tasks, though, do not need you at the keyboard. **tgsync keeps the agent where your code lives and moves only the conversation to Telegram**, so you can start, steer and review work from anywhere, and every risky action still waits for your tap.
+
+Each machine running tgsync is a **node** with its own bot. All nodes share one Telegram forum group: every node gets a control topic `🖥 <node name>` with a pinned status card, and every agent session gets its own topic.
+
+> [!NOTE]
+> The bot's interface is currently in Russian. The documentation is available in English and Russian, and every button is explained in English in the [user guide](docs/en/usage.md).
 
 ## Features
 
-**Sessions**
-- New projects and sessions from Telegram, one topic per session; resume after a crash or restart.
-- Live status of each turn: elapsed time, step count, current action, latest remark.
-- Message queue with a 👀 reaction and a «send now» button; limits on parallel sessions and one turn per project.
-- Stop a turn, switch Claude Code mode (`default`, `acceptEdits`, `plan`), close a session.
+<table>
+<tr>
+<td width="33%" valign="top">
 
-**Permissions**
-- Permission requests as buttons: allow once, deny, or «always» with deliberately narrow rules.
-- Node-wide approve modes: ask for everything, approve all but sudo, or approve all.
-- The agent's `AskUserQuestion` prompts as buttons, including multiple choice and free-text answers.
-- `sudo` through Telegram: per-command approval with the password from `.env` or typed in the chat and deleted right away.
+### 💬 Sessions in topics
+One topic per session. Start new projects and sessions from Telegram; sessions resume after a crash or a restart.
 
-**Turn results**
-- Turn summary with changed files and `+/-` line stats.
-- Whole-turn diff as a file, commit via the agent, confirmed rollback to the state before the turn.
-- Files both ways: the agent sends documents it wrote; you send files and screenshots for it to read.
-- `/ls` file browser and `/file` to fetch any project file.
+</td>
+<td width="33%" valign="top">
 
-**Insight**
-- Subagents panel: who is running, on what, who started them; stop an agent or fetch its full result.
-- Context fill with a one-tap compact button; per-session and per-node token usage; subscription limit alerts.
-- `/history`: continue any Claude Code session from the terminal or desktop app, forking it if it is still active.
+### 📡 Live status
+Elapsed time, step count, the current action and the agent's latest remark, updated as the turn runs, with a stop button.
 
-**More**
-- Voice messages via a self-hosted speech-to-text server; the agent restates the task and waits for your «yes».
-- Plugin profiles per project or per session.
-- Tidy group: pinned node card, auto-cleaned control topic, confirmed cleanup of old topics, per-node topic colours.
-- Linux (systemd), macOS (launchd) and Windows (Task Scheduler); Docker optional.
+</td>
+<td width="33%" valign="top">
+
+### 🔐 Permissions as buttons
+Allow once, deny, or «Всегда» (always) with deliberately narrow rules. Node-wide approve modes.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 📎 Turn summary
+Changed files with `+/−` line stats. Whole-turn **diff** as a file, **commit** via the agent, confirmed **rollback**.
+
+</td>
+<td valign="top">
+
+### ❓ Agent questions
+`AskUserQuestion` prompts arrive as buttons, including multiple choice and free-text answers.
+
+</td>
+<td valign="top">
+
+### 📁 Files both ways
+The agent sends documents it wrote; you send files and screenshots. `/ls` browser and `/file` for any project file.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🎙 Voice messages
+Transcribed by a self-hosted speech-to-text server. The agent restates the task and waits for your «да».
+
+</td>
+<td valign="top">
+
+### 🤖 Subagents panel
+Who is running, on what, who started them. Stop an agent or fetch its full result.
+
+</td>
+<td valign="top">
+
+### 📊 Usage and limits
+Context fill with one-tap compact, token usage per session and node, subscription limit alerts.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🕘 History
+`/history` continues any Claude Code session from the terminal or desktop app — as a fork if it is still active.
+
+</td>
+<td valign="top">
+
+### 🔑 sudo via Telegram
+Per-command approval; the password comes from `.env` or is typed in the chat and deleted right away. Off by default.
+
+</td>
+<td valign="top">
+
+### 🖥 Many machines, one group
+Linux (systemd), macOS (launchd), Windows (Task Scheduler), Docker optional. Plugin profiles per project or session.
+
+</td>
+</tr>
+</table>
+
+## Screenshots
+
+<div align="center">
+
+**A session topic** — the task, the live status of the turn, the agent's answer
+
+<img src="docs/assets/mockup-session.svg" alt="Session topic: task, live status line, agent answer" width="720">
+
+<br><br>
+
+**A permission request** — nothing risky runs without your tap
+
+<img src="docs/assets/mockup-permission.svg" alt="Permission request with Allow, Deny and Always buttons" width="720">
+
+<br><br>
+
+**A turn summary** — review the diff, commit, or roll back
+
+<img src="docs/assets/mockup-turn-summary.svg" alt="Turn summary with changed files and Diff, Commit, Rollback buttons" width="720">
+
+<sub>Illustrations with a fictional project. Button labels are the bot's real (Russian) labels: Разрешить = Allow, Отклонить = Deny, Всегда = Always, Остановить = Stop, Коммит = Commit, Откатить = Roll back.</sub>
+
+</div>
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    you["You<br/>(Telegram app)"] <--> tg["Telegram<br/>forum group"]
+    you["📱 You<br/>(Telegram app)"] <--> tg["Telegram<br/>forum group"]
     tg <--> nodeA["tgsync node A<br/>(bot A)"]
     tg <--> nodeB["tgsync node B<br/>(bot B)"]
     nodeA <--> claudeA["claude CLI<br/>(Agent SDK)"]
@@ -61,49 +165,206 @@ flowchart LR
 
 A node is a single Go binary. It long-polls the Telegram Bot API for its bot, starts one `claude` process per active session through a Go client for the Claude Agent SDK protocol, answers the agent's permission callbacks with Telegram buttons, and keeps its state (sessions, rules, usage) in a local SQLite database. Nodes do not talk to each other; they only share the group.
 
-## Requirements
-
-- Linux, macOS or Windows 10/11.
-- [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in (`claude` on `PATH`). On Windows the native `claude.exe` and Git for Windows are required.
-- Go (the version in `go.mod`) to build from source.
-- A Telegram group with Topics enabled and one bot per node.
-
 ## Quick start
 
-1. Install and log in to Claude Code on the machine.
-2. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token.
-3. Create a Telegram group, enable **Topics**, add the bot as an admin with the "Manage topics" right (also "Delete messages" and "Pin messages" for the full experience).
-4. Clone the repository and fill in `.env`: bot token, your user ID, the group ID (starts with `-100`, e.g. `-1001234567890`), `PROJECTS_ROOT`.
+**You need:** Linux, macOS or Windows 10/11 · [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and logged in (`claude` on `PATH`; on Windows the native `claude.exe` and Git for Windows) · Go (the version in `go.mod`) to build from source · a Telegram account.
+
+1. **Create a bot** with [@BotFather](https://t.me/BotFather) (`/newbot`) and copy its token. Every machine needs its own bot.
+2. **Create a Telegram group**, enable **Topics**, and add the bot as an administrator with **Manage topics** (also **Pin messages**, **Change group info** and **Delete messages** for the full experience).
+3. **Find the ids**: your user id (e.g. via [@userinfobot](https://t.me/userinfobot)) and the group id, which starts with `-100` (see [setup § 2.5](docs/en/setup.md#25-find-the-group-id)).
+4. **Get tgsync and configure it:**
    ```bash
+   git clone https://github.com/ArthurKrantsevich/tgsync.git
+   cd tgsync
    cp .env.example .env
+   chmod 600 .env
    ```
-5. Check the setup: `make check`.
-6. Install the service: `make install` (moves `.env` into the node folder, `~/.config/tgsync` on Linux). On Windows use `scripts/install.ps1`.
-7. Open the `🖥 <NODE_NAME>` topic in the group, send `/menu`, then `/new myproject your task`.
+   Fill in the four required values:
+   ```ini
+   TELEGRAM_BOT_TOKEN=123456:ABC-replace-with-your-token
+   ALLOWED_USER_IDS=123456789
+   GROUP_CHAT_ID=-1001234567890
+   PROJECTS_ROOT=/home/user/projects
+   ```
+5. **Check the setup:**
+   ```bash
+   make check          # builds ./bin/tgsync and runs "tgsync check"
+   ```
+6. **Install it as a service** for your platform (below).
+7. **Say hello:** open the `🖥 <NODE_NAME>` topic in the group, send `/menu`, then `/new myproject your task`.
 
-Full instructions, including macOS, Windows, Docker and the voice server: [docs/en/setup.md](docs/en/setup.md).
+<details>
+<summary><b>🐧 Linux</b> — systemd user service</summary>
 
-## Releases
+```bash
+make install        # same as: sh scripts/install.sh
+```
 
-Pushing a `v*` tag builds archives with GoReleaser for Linux, macOS and Windows (amd64 and arm64) and attaches them to a draft GitHub release, which is published by hand. No container images are published; the `Dockerfile` builds one locally. Building from source is always an option.
+Builds `~/.local/bin/tgsync`, moves `.env` into `~/.config/tgsync`, runs `tgsync check`, writes and starts a systemd user service, and enables linger so the node runs without an active login. If enabling linger fails:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+Logs: `journalctl --user -u tgsync -f` or `make logs`.
+
+</details>
+
+<details>
+<summary><b>🍎 macOS</b> — launchd agent</summary>
+
+```bash
+make install
+```
+
+Same steps as Linux; the node folder is `~/Library/Application Support/tgsync`, the service is the launchd agent `dev.tgsync`, logs go to `~/Library/Logs/tgsync.log`. A launchd user agent runs only while you are logged in.
+
+</details>
+
+<details>
+<summary><b>🪟 Windows</b> — Task Scheduler</summary>
+
+In PowerShell, from the repository folder:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+Registers the task `tgsync` for your user (starts at logon, no administrator rights needed). Logs: `%APPDATA%\tgsync\tgsync.log`. There is no sudo on Windows.
+
+</details>
+
+<details>
+<summary><b>🐳 Docker</b> — compose (Linux hosts)</summary>
+
+Put `.env` into `~/.config/tgsync/.env` on the host, then:
+
+```bash
+test -f ~/.claude.json || touch ~/.claude.json
+TGSYNC_UID=$(id -u) TGSYNC_GID=$(id -g) \
+  docker compose --env-file ~/.config/tgsync/.env up -d --build
+docker compose logs -f
+```
+
+The container runs as your user and shares `~/.claude` and `PROJECTS_ROOT` with the host. No container images are published; the `Dockerfile` builds one locally. See the limits in [setup § 5.4](docs/en/setup.md#54-docker-compose).
+
+</details>
+
+<details>
+<summary><b>📦 Release archive</b> — no Go needed</summary>
+
+Download the archive for your platform and `checksums.txt` from [Releases](https://github.com/ArthurKrantsevich/tgsync/releases), then:
+
+```bash
+sha256sum -c checksums.txt --ignore-missing
+mkdir tgsync && tar xzf tgsync_*_linux_amd64.tar.gz -C tgsync && cd tgsync
+cp .env.example .env && chmod 600 .env   # fill it in
+sh scripts/install.sh                    # or scripts\install.ps1 on Windows
+```
+
+On macOS, clear the Gatekeeper quarantine with `xattr -d com.apple.quarantine tgsync`.
+
+</details>
+
+Full instructions, including the voice server, backup, upgrade and uninstall: **[docs/en/setup.md](docs/en/setup.md)**.
+
+## Approve modes
+
+`/approve` (or **🔐 Автоодобрение** in the menu) sets the mode for the whole node:
+
+| Mode | Behaviour |
+|---|---|
+| 🔴 **По запросу** — on request *(default)* | A button for every action the built-in rules and your «Всегда» rules do not allow. |
+| 🟡 **Всё, кроме sudo** — all but sudo | Everything runs without asking; sudo still gets a button. |
+| 🟢 **Всё сам** — everything | Every command runs without asking, sudo included (if sudo is enabled). |
+
+In every mode, questions from the agent and commands that may touch tgsync's own folder (`.env`, database) still come as buttons. Read [security.md](docs/en/security.md#what-the-agent-can-do-in-each-mode) before switching to 🟡 or 🟢.
 
 ## Documentation
 
 | | English | Русский |
 |---|---|---|
-| Setup and maintenance | [setup](docs/en/setup.md) | [установка](docs/ru/setup.md) |
-| Configuration | [configuration](docs/en/configuration.md) | [настройка](docs/ru/configuration.md) |
-| User guide | [usage](docs/en/usage.md) | [как пользоваться](docs/ru/usage.md) |
-| Security | [security](docs/en/security.md) | [безопасность](docs/ru/security.md) |
-| Design spec | [spec](docs/en/spec.md) | [спецификация](docs/ru/spec.md) |
-| Troubleshooting | [troubleshooting](docs/en/troubleshooting.md) | [решение проблем](docs/ru/troubleshooting.md) |
+| 🚀 Setup and maintenance | [setup](docs/en/setup.md) | [установка](docs/ru/setup.md) |
+| ⚙️ Configuration (`.env`, profiles, sudo, voice) | [configuration](docs/en/configuration.md) | [настройка](docs/ru/configuration.md) |
+| 📖 User guide | [usage](docs/en/usage.md) | [как пользоваться](docs/ru/usage.md) |
+| 🛡 Security | [security](docs/en/security.md) | [безопасность](docs/ru/security.md) |
+| 📐 Design spec | [spec](docs/en/spec.md) | [спецификация](docs/ru/spec.md) |
+| 🩺 Troubleshooting | [troubleshooting](docs/en/troubleshooting.md) | [решение проблем](docs/ru/troubleshooting.md) |
 
 Also: [CHANGELOG](CHANGELOG.md) · [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md)
 
+## FAQ
+
+<details>
+<summary><b>Does my code leave my machine?</b></summary>
+
+The agent runs on your machine through your own Claude Code, exactly as in the terminal. What reaches Telegram is the conversation: your messages, the agent's answers, commands in permission requests, turn summaries and the files and diffs you ask for. Apart from Telegram and Claude Code itself, tgsync calls no third-party services; voice recognition runs on your own server.
+
+</details>
+
+<details>
+<summary><b>Can several machines share one bot?</b></summary>
+
+No. Telegram lets only one process receive updates for a bot token, so every node needs its own bot. All nodes can live in the same group: same `GROUP_CHAT_ID` and `ALLOWED_USER_IDS`, different `NODE_NAME`s.
+
+</details>
+
+<details>
+<summary><b>Can I continue a session I started in the terminal?</b></summary>
+
+Yes: `/history` lists recent Claude Code sessions of the projects in `PROJECTS_ROOT`, including terminal and desktop-app ones. If a session is still active, Telegram continues a copy (fork), so two processes never write to the same history.
+
+</details>
+
+<details>
+<summary><b>What happens if the node restarts in the middle of a turn?</b></summary>
+
+Open sessions are restored on start. Send any message to the topic and the session continues with the same context.
+
+</details>
+
+<details>
+<summary><b>Do diff, commit and rollback work in any project?</b></summary>
+
+They need a git project: tgsync snapshots the working tree before and after each turn through a temporary index, leaving your index, branches and stash untouched. Outside git the turn summary still lists the changed files, but has no buttons.
+
+</details>
+
+<details>
+<summary><b>Is the bot available in English?</b></summary>
+
+Not yet — the bot's interface is in Russian only for now. The documentation is fully bilingual and translates every label.
+
+</details>
+
 ## Security
 
-tgsync lets whoever controls the bot run an agent as your OS user. Only IDs in `ALLOWED_USER_IDS` can control a node, and everyone in the group sees the agent's output, so keep the group private. By default every risky action waits for a tap; the «all» approve modes remove that safeguard. Messages pass through Telegram's servers and are not end-to-end encrypted. Apart from Telegram and Claude Code itself, tgsync calls no third-party services; voice recognition runs on your own server. Read [docs/en/security.md](docs/en/security.md) before enabling auto-approve or sudo, and report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+tgsync lets whoever controls the bot run an agent as your OS user, so it is built to be careful by default:
+
+- 🔒 **Only allowed users.** Messages and buttons from anyone outside `ALLOWED_USER_IDS` are silently ignored; a node works only in its own group and topics.
+- ✋ **Ask by default.** Every risky action waits for a tap; «Всегда» rules are deliberately narrow and are never offered for shells, interpreters, destructive commands or sudo.
+- 🗝 **Secrets stay out of reach.** The agent's tools cannot read `.env` or the database, the bot token is removed from the agent's environment, and the sudo password never reaches the agent.
+- 🏠 **No third-party services.** Only Telegram and Claude Code; speech-to-text is self-hosted.
+
+Keep the group private — everyone in it sees the agent's output — and remember that Telegram bot messages are not end-to-end encrypted. Read **[docs/en/security.md](docs/en/security.md)** before enabling auto-approve or sudo, and report vulnerabilities privately as described in **[SECURITY.md](SECURITY.md)**.
+
+## Contributing
+
+Bug reports, fixes and focused improvements are welcome. For anything larger than a small fix, please open an issue first. Build with `make build`, test with `make test` (tests must pass with `-race`), and see **[CONTRIBUTING.md](CONTRIBUTING.md)** for formatting, platform notes and the commit style.
+
+## Releases
+
+Pushing a `v*` tag builds archives with GoReleaser for Linux, macOS and Windows (amd64 and arm64) and attaches them to a draft GitHub release, which is published by hand. See the [CHANGELOG](CHANGELOG.md).
 
 ## License
 
 [MIT](LICENSE) © 2026 Arthur Krantsevich
+
+---
+
+<div align="center">
+<img src="docs/assets/logo.png" alt="tgsync logo" width="56"><br>
+<sub>Built with Go · Made for people who would rather not babysit a terminal</sub>
+</div>

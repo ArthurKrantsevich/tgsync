@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/ArthurKrantsevich/tgsync/security/advisories/new
+    about: Please report vulnerabilities privately through a security advisory, not a public issue. See SECURITY.md.
+  - name: Documentation
+    url: https://github.com/ArthurKrantsevich/tgsync/tree/main/docs/en
+    about: Setup, configuration, user guide, security and troubleshooting (English and Russian).
+  - name: Troubleshooting guide
+    url: https://github.com/ArthurKrantsevich/tgsync/blob/main/docs/en/troubleshooting.md
+    about: Common problems with configuration, Telegram rights, Claude Code, services, voice and Docker.

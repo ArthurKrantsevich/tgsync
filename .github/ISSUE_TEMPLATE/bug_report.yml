@@ -1,0 +1,91 @@
+name: Bug report
+description: Something in tgsync does not work as documented.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        **Security issues** must not be reported here — use a [private security advisory](https://github.com/ArthurKrantsevich/tgsync/security/advisories/new) instead (see SECURITY.md).
+
+        **Never paste real secrets.** Remove bot tokens, user ids, group ids, sudo passwords, paths with your username and project contents from everything below. Placeholders such as `123456789` and `-1001234567890` are fine.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear description of the bug. Quote the bot's messages or buttons if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. In the control topic send `/new webapp ...`
+        2. ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: tgsync version
+      description: Output of `tgsync version`, or the commit you built from.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux (systemd)
+        - macOS (launchd)
+        - Windows (Task Scheduler)
+        - Docker (compose)
+        - Terminal (tgsync run)
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`.
+  - type: dropdown
+    id: approve-mode
+    attributes:
+      label: Approve mode
+      options:
+        - 🔴 По запросу (on request, default)
+        - 🟡 Всё, кроме sudo (all but sudo)
+        - 🟢 Всё сам (everything)
+        - Not relevant
+  - type: textarea
+    id: check
+    attributes:
+      label: Output of `tgsync check`
+      description: Redact the bot username, ids and paths if you prefer.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: See docs/en/setup.md § 8.1 for where logs are on your platform. Redact secrets.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and the [troubleshooting guide](https://github.com/ArthurKrantsevich/tgsync/blob/main/docs/en/troubleshooting.md).
+          required: true
+        - label: I removed tokens, ids, passwords and other private data from this report.
+          required: true

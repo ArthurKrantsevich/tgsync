@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="553" viewBox="0 0 800 553" role="img" aria-label="tgsync turn summary with changed files, Diff, Commit and Rollback buttons">
+<title>tgsync turn summary with changed files, Diff, Commit and Rollback buttons</title>
+<defs>
+  <linearGradient id="av" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0f1f3d"/><stop offset="1" stop-color="#15707f"/></linearGradient>
+  <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#ffffff" fill-opacity="0.035"/></pattern>
+  <clipPath id="win"><rect width="800" height="553" rx="20"/></clipPath>
+</defs>
+<g clip-path="url(#win)">
+<rect width="800" height="553" fill="#0e1621"/>
+<rect width="800" height="553" fill="url(#dots)"/>
+<rect width="800" height="64" fill="#17212b"/>
+<path d="M30 22 l-10 10 l10 10" fill="none" stroke="#8b9bab" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="72" cy="32" r="20" fill="#2a6f7d"/>
+<path d="M64 24 l8 8 l-8 8" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="75" y="37" width="9" height="3.5" rx="1.7" fill="#fff"/>
+<text x="104" y="29" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#f5f7fa">webapp · Add a dark mode toggle</text>
+<text x="104" y="50" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#8b9bab">Dev agents · topic</text>
+<circle cx="766" cy="24" r="2.4" fill="#8b9bab"/><circle cx="766" cy="32" r="2.4" fill="#8b9bab"/><circle cx="766" cy="40" r="2.4" fill="#8b9bab"/>
+<rect x="74" y="82" width="520" height="111" rx="16" fill="#182533"/>
+<text x="88" y="113" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#5fc4d4">Laptop Node</text>
+<text x="88" y="138" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" fill="#f5f7fa"><tspan xml:space="preserve">Dark mode is ready, all 4 new tests pass.</tspan></text>
+<text x="88" y="163" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" fill="#f5f7fa"><tspan font-style="italic" fill="#8b9bab" xml:space="preserve">✅ Ход завершён · 2m41s · шагов: 14 · $0.38 · 🧠 23%</tspan></text>
+<text x="580" y="183" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#8b9bab">14:05</text>
+<g transform="translate(24 153)">
+  <circle cx="20.0" cy="20.0" r="20.0" fill="url(#av)"/>
+  <g transform="scale(0.0625)">
+    <polyline points="175,222 280,318 175,414" fill="none" stroke="#f5f8fc" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="314" y="392" width="128" height="48" rx="24" fill="#f5f8fc"/>
+    <path d="M448 166 L459 199 L492 210 L459 221 L448 254 L437 221 L404 210 L437 199 Z" fill="#ffc85a"/>
+  </g>
+</g>
+<rect x="74.0" y="199" width="520.0" height="40" rx="10" fill="#1c2b3a" stroke="#2c4053"/><text x="334.0" y="225" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#f5f7fa">⋯</text>
+<rect x="74" y="259" width="520" height="136" rx="16" fill="#182533"/>
+<text x="88" y="290" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" fill="#f5f7fa"><tspan xml:space="preserve">📎 Изменено за ход: 3 · </tspan><tspan fill="#7bd88f" font-weight="700" xml:space="preserve">+42</tspan><tspan xml:space="preserve"> </tspan><tspan fill="#f28b82" font-weight="700" xml:space="preserve">−7</tspan></text>
+<text x="88" y="315" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" fill="#f5f7fa"><tspan xml:space="preserve">• </tspan><tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#9fd3ff" font-size="16" xml:space="preserve">src/app.ts</tspan><tspan xml:space="preserve"> +12 −5</tspan></text>
+<text x="88" y="340" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" fill="#f5f7fa"><tspan xml:space="preserve">• </tspan><tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#9fd3ff" font-size="16" xml:space="preserve">src/settings/ThemeToggle.tsx</tspan><tspan xml:space="preserve"> +26 (новый)</tspan></text>
+<text x="88" y="365" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" fill="#f5f7fa"><tspan xml:space="preserve">• </tspan><tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#9fd3ff" font-size="16" xml:space="preserve">tests/theme.test.ts</tspan><tspan xml:space="preserve"> +4 −2</tspan></text>
+<text x="580" y="385" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#8b9bab">14:05</text>
+<g transform="translate(24 355)">
+  <circle cx="20.0" cy="20.0" r="20.0" fill="url(#av)"/>
+  <g transform="scale(0.0625)">
+    <polyline points="175,222 280,318 175,414" fill="none" stroke="#f5f8fc" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="314" y="392" width="128" height="48" rx="24" fill="#f5f8fc"/>
+    <path d="M448 166 L459 199 L492 210 L459 221 L448 254 L437 221 L404 210 L437 199 Z" fill="#ffc85a"/>
+  </g>
+</g>
+<rect x="74.0" y="401" width="169.33333333333334" height="40" rx="10" fill="#1c2b3a" stroke="#2c4053"/><text x="158.66666666666669" y="427" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#f5f7fa">🔀 Diff</text>
+<rect x="249.33333333333334" y="401" width="169.33333333333334" height="40" rx="10" fill="#1c2b3a" stroke="#2c4053"/><text x="334.0" y="427" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#f5f7fa">✅ Коммит</text>
+<rect x="424.6666666666667" y="401" width="169.33333333333334" height="40" rx="10" fill="#1c2b3a" stroke="#2c4053"/><text x="509.33333333333337" y="427" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#f5f7fa">↩ Откатить</text>
+<rect x="74" y="461" width="370" height="72" rx="16" fill="#182533"/><circle cx="114" cy="497" r="24" fill="#3a7bd5"/><path d="M106 485 h11 l7 7 v17 h-18 z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/><path d="M110 498 h10 M110 503 h7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><text x="150" y="492" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#f5f7fa">turn-3.diff</text><text x="150" y="515" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#8b9bab">2.1 KB · diff of the whole turn</text><text x="430" y="523" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#8b9bab">14:06</text>
+<g transform="translate(24 493)">
+  <circle cx="20.0" cy="20.0" r="20.0" fill="url(#av)"/>
+  <g transform="scale(0.0625)">
+    <polyline points="175,222 280,318 175,414" fill="none" stroke="#f5f8fc" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="314" y="392" width="128" height="48" rx="24" fill="#f5f8fc"/>
+    <path d="M448 166 L459 199 L492 210 L459 221 L448 254 L437 221 L404 210 L437 199 Z" fill="#ffc85a"/>
+  </g>
+</g>
+</g>
+</svg>
