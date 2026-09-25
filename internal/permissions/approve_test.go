@@ -76,12 +76,12 @@ func TestApproveAllKeepsHardDenies(t *testing.T) {
 	f := newFixture(t)
 	f.setMode(t, ApproveAll)
 	can := f.b.CanUseTool(SessionInfo{ThreadID: thread, Project: "demo", ProjectDir: osPath("/w/demo"), Protected: []string{osPath("/opt/tgsync/.env")}})
-	d := can(context.Background(), agent.PermissionRequest{ToolName: "Bash", Input: map[string]any{"command": "cat /opt/tgsync/.env"}})
+	d := decision(t, bash(can, "cat "+shellPath("/opt/tgsync/.env")))
 	if d.Allow {
 		t.Fatalf("protected file allowed: %+v", d)
 	}
 	// SUDO_MODE=off: no sudo policy, sudo stays denied.
-	d = can(context.Background(), agent.PermissionRequest{ToolName: "Bash", Input: map[string]any{"command": "sudo id"}})
+	d = decision(t, bash(can, "sudo id"))
 	if d.Allow {
 		t.Fatalf("sudo allowed with SUDO_MODE=off: %+v", d)
 	}

@@ -74,6 +74,7 @@ type Manager struct {
 	fileSeq   int
 	itemSeq   int                // ids of inbox items, for «send now» buttons
 	agentSeq  int                // numbers of tracked agents, for panel buttons
+	endSeq    int                // order tracked agents finished in
 	agentRefs map[int]agentRef   // panel buttons: ag:<n> → agent
 	fileRefs  map[string]fileRef // /ls buttons: f:<n> file, l:<n> folder
 	attaching map[string]bool    // Claude session ids being attached right now

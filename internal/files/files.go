@@ -75,7 +75,7 @@ func (t *Tracker) Mentioned(text string) []string {
 	for _, rel := range all {
 		full := filepath.Join(t.dir, rel)
 		if containsPath(text, rel) || containsPath(text, full) ||
-			containsPath(text, filepath.ToSlash(rel)) || containsPath(text, filepath.ToSlash(full)) {
+			containsPath(text, filepath.FromSlash(rel)) || containsPath(text, filepath.ToSlash(full)) {
 			out = append(out, rel)
 		}
 	}
@@ -120,7 +120,8 @@ func relIn(dir, p string) (string, bool) {
 	if !ok || rel == "." {
 		return "", false
 	}
-	return rel, true
+	// rel is shown to the user and used as a git pathspec: always with "/".
+	return filepath.ToSlash(rel), true
 }
 
 // containsPath finds rel in text as a whole path, not as part of a longer name.
@@ -181,6 +182,11 @@ func resolve(projectDir, p string, protected []string) (checked, error) {
 	}
 	abs := filepath.Join(projectDir, rel)
 	st, err := os.Stat(abs)
+	if err == nil {
+		// Pin the identity now: on Windows os.SameFile reads it lazily from
+		// the path, which by the time of the read may name another file.
+		_ = os.SameFile(st, st)
+	}
 	var real string
 	// Symlinks are followed by the upload, so the target must pass the same checks.
 	if err == nil {
@@ -314,7 +320,7 @@ func ResolveDir(projectDir, p string) (abs, rel string, err error) {
 	if rel == "." {
 		rel = ""
 	}
-	return p, rel, nil
+	return p, filepath.ToSlash(rel), nil
 }
 
 // SafeName turns a file name sent by the user into a safe base name.

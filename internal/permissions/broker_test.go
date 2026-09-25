@@ -59,6 +59,16 @@ func (f *fixture) press(t *testing.T, textPrefix string) {
 	f.b.HandleCallback(context.Background(), telegram.Update{UserID: 1, ThreadID: thread, CallbackID: "cb", CallbackData: btn.Data})
 }
 
+// bash runs a Bash request through can in the background: a request that
+// unexpectedly waits for a button fails in decision instead of hanging.
+func bash(can agent.CanUseToolFunc, cmd string) <-chan agent.PermissionDecision {
+	out := make(chan agent.PermissionDecision, 1)
+	go func() {
+		out <- can(context.Background(), agent.PermissionRequest{ToolName: "Bash", Input: map[string]any{"command": cmd}})
+	}()
+	return out
+}
+
 func decision(t *testing.T, ch <-chan agent.PermissionDecision) agent.PermissionDecision {
 	t.Helper()
 	select {
@@ -380,7 +390,7 @@ func TestSudoProtectedPathStillDenied(t *testing.T) {
 	f := newFixture(t)
 	f.b.SetSudo(&fakeSudo{grants: map[int]int{}})
 	can := f.b.CanUseTool(SessionInfo{ThreadID: thread, Project: "demo", ProjectDir: osPath("/w/demo"), Protected: []string{osPath("/opt/tgsync/.env")}})
-	d := can(context.Background(), agent.PermissionRequest{ToolName: "Bash", Input: map[string]any{"command": "sudo cat /opt/tgsync/.env"}})
+	d := decision(t, bash(can, "sudo cat "+shellPath("/opt/tgsync/.env")))
 	if d.Allow || len(f.api.Messages(thread)) != 0 {
 		t.Fatalf("decision: %+v", d)
 	}
@@ -390,7 +400,7 @@ func TestWrappedSudoRefusedWithoutPrompt(t *testing.T) {
 	f := newFixture(t)
 	f.b.SetSudo(&fakeSudo{grants: map[int]int{}})
 	can := f.b.CanUseTool(SessionInfo{ThreadID: thread, Project: "demo", ProjectDir: osPath("/w/demo")})
-	d := can(context.Background(), agent.PermissionRequest{ToolName: "Bash", Input: map[string]any{"command": "env sudo id"}})
+	d := decision(t, bash(can, "env sudo id"))
 	if d.Allow || !strings.Contains(d.Message, "прямым вызовом") || len(f.api.Messages(thread)) != 0 {
 		t.Fatalf("decision: %+v, messages: %d", d, len(f.api.Messages(thread)))
 	}

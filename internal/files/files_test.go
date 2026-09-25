@@ -3,6 +3,7 @@ package files
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -15,12 +16,15 @@ func TestTracker(t *testing.T) {
 	tr.Note("Write", map[string]any{"file_path": osPath("/etc/hosts")})
 	tr.Note("Read", map[string]any{"file_path": osPath("/w/demo/read.go")})
 	tr.Note("Edit", map[string]any{"file_path": osPath("/w/demo/main.go")})
-	if got := strings.Join(tr.Changed(), ","); got != filepath.FromSlash("docs/spec.md,main.go,n.ipynb") {
+	if got := strings.Join(tr.Changed(), ","); got != "docs/spec.md,main.go,n.ipynb" {
 		t.Fatalf("changed: %s", got)
 	}
 	text := "Spec written to `docs/spec.md`, please review. Also see " + osPath("/w/demo/main.go") + " and README.md."
-	if got := strings.Join(tr.Mentioned(text), ","); got != filepath.FromSlash("docs/spec.md,main.go") {
+	if got := strings.Join(tr.Mentioned(text), ","); got != "docs/spec.md,main.go" {
 		t.Fatalf("mentioned: %s", got)
+	}
+	if got := tr.Mentioned(`see docs\spec.md`); runtime.GOOS == "windows" && strings.Join(got, ",") != "docs/spec.md" {
+		t.Fatalf("a Windows spelling must be found: %v", got)
 	}
 	tr.ResetTurn()
 	if len(tr.Changed()) != 0 {
@@ -36,7 +40,7 @@ func TestTracker(t *testing.T) {
 	if !tr.WasSent("a.md", "h1") || tr.WasSent("a.md", "h2") || !tr.IsSent("a.md") {
 		t.Fatal("dedup by content hash is wrong")
 	}
-	if got := tr.Mentioned("see ./docs/spec.md and /w/demo/main.go.bak"); strings.Join(got, ",") != filepath.FromSlash("docs/spec.md") {
+	if got := tr.Mentioned("see ./docs/spec.md and /w/demo/main.go.bak"); strings.Join(got, ",") != "docs/spec.md" {
 		t.Fatalf("./ prefix or abs boundary: %v", got)
 	}
 }

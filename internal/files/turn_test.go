@@ -15,6 +15,8 @@ func repo(t *testing.T, fs map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	gitT(t, dir, "init", "-q")
+	// Byte-exact contents: Windows runners default to core.autocrlf=true.
+	gitT(t, dir, "config", "core.autocrlf", "false")
 	for name, body := range fs {
 		writeT(t, dir, name, body)
 	}
