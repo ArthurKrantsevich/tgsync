@@ -54,6 +54,14 @@ func isSudo(w *syntax.Word) bool {
 	return lit == "sudo" || strings.HasSuffix(lit, "/sudo")
 }
 
+// isSudoArg reports whether an argument of another command (env sudo,
+// xargs /usr/bin/sudo) names sudo. A relative path such as ./internal/sudo
+// is a file or folder argument, not the sudo binary.
+func isSudoArg(w *syntax.Word) bool {
+	lit := w.Lit()
+	return lit == "sudo" || strings.HasPrefix(lit, "/")
+}
+
 // sudoCalls parses cmd and returns the sudo calls in it (not the word
 // "sudo" inside strings or arguments).
 func sudoCalls(cmd string) ([]*syntax.CallExpr, error) {
@@ -91,7 +99,7 @@ func Uses(cmd string) bool {
 			return !found
 		}
 		for i, w := range ce.Args {
-			if isSudo(w) {
+			if isSudo(w) && (i == 0 || isSudoArg(w)) {
 				found = true
 				return false
 			}

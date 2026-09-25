@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -62,7 +63,11 @@ func TestRewriteCommand(t *testing.T) {
 			t.Errorf("RewriteCommand(%q) must not rewrite a wrapped call", c)
 		}
 	}
-	for _, c := range []string{"cat <<'EOF'\nsudo x\nEOF", `git commit -m "fix sudo"`} {
+	if !Uses("env /usr/bin/sudo id") {
+		t.Error("an absolute path to sudo passed to a wrapper is sudo")
+	}
+	for _, c := range []string{"cat <<'EOF'\nsudo x\nEOF", `git commit -m "fix sudo"`,
+		"go test ./internal/sudo", "ls internal/sudo", "gofmt -l internal/sudo/sudo.go"} {
 		if Uses(c) {
 			t.Errorf("Uses(%q) = true, want false", c)
 		}
@@ -91,8 +96,20 @@ func askpass(sock string, token string) (string, error) {
 	return strings.TrimSpace(out.String()), err
 }
 
+// shortSock returns a socket path in a short temp dir: macOS limits unix
+// socket paths to 104 bytes, and t.TempDir includes the test name.
+func shortSock(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "sk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "a.sock")
+}
+
 func newServer(t *testing.T, mode, pw string, ask AskFunc) *Server {
-	s := NewServer(filepath.Join(t.TempDir(), "a.sock"), mode, pw, ask)
+	s := NewServer(shortSock(t), mode, pw, ask)
 	s.peerCheck = nil // tests connect directly, not through sudo
 	return s
 }
@@ -138,7 +155,7 @@ func TestGrantExpires(t *testing.T) {
 }
 
 func TestPeerMustBeSudo(t *testing.T) {
-	s := NewServer(filepath.Join(t.TempDir(), "a.sock"), ModeEnv, "pw", nil)
+	s := NewServer(shortSock(t), ModeEnv, "pw", nil)
 	sock := serve(t, s)
 	tok := NewToken()
 	s.Grant(1, tok, 1)
