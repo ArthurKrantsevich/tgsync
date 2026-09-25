@@ -6,7 +6,7 @@ require (
 	github.com/ProjAnvil/claude-agent-sdk-golang v0.2.143
 	github.com/go-telegram/bot v1.27.0
 	github.com/joho/godotenv v1.5.1
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.59.0
 	mvdan.cc/sh/v3 v3.14.1
