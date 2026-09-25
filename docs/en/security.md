@@ -78,9 +78,10 @@ In every mode, whatever your Claude Code settings allow (`~/.claude/settings.jso
 
 tgsync's own files are `.env` (bot token, sudo password) and the SQLite database (`tgsync.db` and its `-wal`/`-shm` files).
 
-- Read, write and search tools that point at these files, or search inside their folder, are denied.
+- Read, write and search tools (`Read`, `Grep`, `Glob`, `LS`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`) that point at these files, or at a folder that holds them or tgsync's folder, are denied. `~` is expanded and symlinks are followed first, so a link in the project that leads to tgsync's folder does not help; a `Glob` pattern that starts with such a folder is denied too.
 - A shell command with the literal path of `.env` or the database is denied, with or without sudo.
-- A shell command that may reach tgsync's folder another way (`~` and `$HOME`, relative paths, globs such as `tgs*`, variables before `/tgsync/`, nested `sh -c` and heredocs, and parent folders such as `~` or `/`) always needs a button without «Всегда», in every auto-approve mode, and saved rules do not apply to it. Read such commands carefully.
+- A shell command that may reach tgsync's folder another way always needs a button without «Всегда», in every auto-approve mode, and saved rules do not apply to it. Read such commands carefully. This covers `~`, `~user` and `$HOME`; `$XDG_CONFIG_HOME`, `$APPDATA`, `$PWD` and similar variables (expanded from the node's environment); relative paths, also after `cd`/`pushd`, and links inside the project; globs such as `tgs*`; unknown variables before `/tgsync/`; scripts run by `sh -c`, `eval`, `python -c`/`node -e` and heredocs fed to a shell or an interpreter; parent folders such as `~` or `/`; and commands the shell parser does not support.
+- Not flagged: quoted text (`git commit -m "a / b"`, a heredoc written to a file) unless a shell or an interpreter runs it, paths inside the project, and the project's own parent (`ls ..`, `cd .. && ls`) unless the command walks folder trees (`grep -r`, `rg`, `find`, `tar` …).
 - `send_file`, `/file`, `/ls` and turn diffs never send these files, even if they sit inside a project.
 
 **Limitation.** The agent runs as the same OS user, so these are tgsync's rules, not OS permissions. This is defence in depth, not a boundary: a script the agent writes and runs (without a prompt in 🟡 and 🟢) can read these files and tgsync will not see it.
@@ -94,7 +95,7 @@ So in 🔴 mode, writing such a file needs a button even inside the project, wit
 ## The «Всегда» (Always) button
 
 - For shell, the command and its first argument are saved (`go test`). Chains, substitutions and redirections never match a rule.
-- Shells and interpreters, `rm`, `dd`, `chmod`, `find`, wrappers (`env`, `xargs`, `eval`, `timeout` …), `ssh`, `sudo`, commands prefixed with `VAR=value`, and `git` with global options get no «Всегда» button. Older rules such as `python3` or `rm` no longer apply to them.
+- Shells and interpreters, `rm`, `dd`, `chmod`, `find`, wrappers (`env`, `xargs`, `eval`, `timeout` …), `ssh`, `sudo`, commands prefixed with `VAR=value` or named through a variable, `git` with global options and `git config`, commands with an `-o`/`--output` flag, and commands with an argument that points into `.git/`, `.claude/` or another sensitive project file (by name or through a link) get no «Всегда» button. Older rules such as `python3`, `rm`, `git log` or `go build` no longer apply to them. Quoting the name (`\rm`, `"rm"`) changes nothing.
 - A rule such as `npm run` or `make` allows any script or target, so keep «Всегда» for narrow commands.
 - For an edit outside the project, the rule covers only that file's folder, not subfolders; older rules without a folder no longer apply.
 - Rules are stored in the database per project.
@@ -104,8 +105,9 @@ So in 🔴 mode, writing such a file needs a button even inside the project, wit
 The agent's Bash runs without a terminal, so `sudo` cannot prompt for a password itself. tgsync provides an askpass bridge:
 
 1. When the agent wants to run a command with `sudo`, the topic shows a «🔐 sudo» request with the command and ✅/❌ buttons. There is no «Всегда».
-2. After ✅, tgsync finds the real `sudo` calls in the command (with a shell parser, not a text search) and rewrites each as `TGSYNC_SUDO_TOKEN=<one-time token> sudo -A …`. The token is valid only for those calls, for 5 minutes and until the turn ends. sudo through wrappers (`env`, `xargs`, `find -exec`, `sh -c`) is not supported; the agent is asked to rewrite the command.
-3. `sudo` runs `tgsync` as `SUDO_ASKPASS`, which passes the token to the node over the unix socket `askpass.sock` (mode 0600). The node releases the password only if the token is valid and the socket peer was started by `sudo`: its parent must be named `sudo` and run with effective uid 0, like a real setuid sudo (checked with `SO_PEERCRED` and `/proc/<pid>/status` on Linux, `LOCAL_PEERPID` and `sysctl` on macOS).
+2. After ✅, tgsync finds the real `sudo` calls in the command (with a shell parser, not a text search) and rewrites each as `SUDO_ASKPASS=<tgsync binary> TGSYNC_SUDO_TOKEN=<one-time token> sudo -A …`, after any `VAR=value` of the command itself, so tgsync's askpass always wins. The token is valid only for those calls, for 5 minutes and until the turn ends; a call inside a loop or a function may ask up to 5 times. sudo through wrappers (`env`, `xargs`, `find -exec`, `sh -c`) is not supported; the agent is asked to rewrite the command.
+   A command that mentions `SUDO_ASKPASS`, assigns `PATH`, defines a `sudo` function or alias, or runs sudo from outside the system folders (`./sudo`, `/tmp/x/sudo`) is refused before any prompt: the program it chose would get the token and the password.
+3. `sudo` runs `tgsync` as askpass, which passes the token to the node over the unix socket `askpass.sock` (mode 0600). The node releases the password only if the token is valid and the socket peer was started by `sudo`: its parent must be named `sudo` and run with effective uid 0, like a real setuid sudo (checked with `SO_PEERCRED` and `/proc/<pid>/status` on Linux, `LOCAL_PEERPID` and `sysctl` on macOS).
 
 Modes (`SUDO_MODE` in `.env`):
 
@@ -120,6 +122,7 @@ In `telegram` mode the password is asked for on every command: without a termina
 Keep in mind:
 - An approved sudo command runs as root. The button is the safeguard: read the whole command before ✅. Other parts of the same command (e.g. `./configure` in `./configure && sudo make install`) do not see the token but run as your user.
 - In the 🟢 auto-approve mode, sudo commands run without a button.
+- The one-time token is part of the command line, so other processes of your user can see it in the process list while the command runs. It cannot be hidden there; what limits it: it works only for the approved calls (usually once), for 5 minutes and until the turn ends, and the node answers only a process started by a setuid-root `sudo`.
 - Do not set `SUDO_PASSWORD` via systemd `Environment=` or compose `environment:`: it is visible in `/proc/<pid>/environ` from there.
 - Safer than any password: a `NOPASSWD` rule in `/etc/sudoers.d/` for exactly the commands you need (e.g. `systemctl restart myapp`), with `SUDO_MODE=off` for everything else.
 - Commands that touch tgsync's own files are denied with sudo too.
