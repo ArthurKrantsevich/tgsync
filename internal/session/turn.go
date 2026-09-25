@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -28,6 +29,33 @@ type turnRef struct {
 	html         string
 	kb           telegram.Keyboard
 	committed    bool // ✅ pressed: one commit prompt per turn
+}
+
+// snapshot takes a git snapshot of the session's project for the turn
+// summary. The summary of a turn without one has no figures and buttons, so
+// a failure (a timeout, a broken repository) is told to the user once, until
+// a snapshot works again. A missing project folder is left to claude, which
+// fails on it too.
+func (m *Manager) snapshot(ctx context.Context, s *sess, what string) string {
+	tree, err := files.Snapshot(ctx, s.row.Cwd)
+	if err != nil {
+		slog.Warn(what, "thread", s.row.ThreadID, "err", err)
+	}
+	m.mu.Lock()
+	tell := err != nil && !s.snapWarned
+	s.snapWarned = err != nil
+	m.mu.Unlock()
+	if tell {
+		if _, serr := os.Stat(s.row.Cwd); serr == nil {
+			msg := []rune(err.Error())
+			if len(msg) > 300 {
+				msg = append(msg[:299], '…')
+			}
+			m.say(ctx, s, "⚠️ Не удалось снять git-снимок проекта, сводка хода будет без статистики и кнопок: <code>"+
+				render.Escape(string(msg))+"</code>", true)
+		}
+	}
+	return tree
 }
 
 // turnStats returns the turn's per-file figures, nil outside git or on a

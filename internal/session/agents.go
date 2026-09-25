@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"regexp"
 	"sort"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
-	"github.com/ArthurKrantsevich/tgsync/internal/files"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
@@ -587,14 +585,11 @@ func (m *Manager) beginContinuation(ctx context.Context, s *sess) {
 	s.status = render.Status{State: store.StateRunning, Started: now, LastEvent: now,
 		Note: "🤖 продолжение после агента " + name}
 	s.lastEdit, s.dirty, s.waits = now, false, 0
-	s.warned, s.overtime, s.stallFrom = false, false, time.Time{}
+	s.warned, s.overtime, s.stallFrom, s.retryAt = false, false, time.Time{}, time.Time{}
 	s.lastText, s.pending, s.interrupted = "", "", false
-	status, cwd := s.status, s.row.Cwd
+	status := s.status
 	m.mu.Unlock()
-	base, err := files.Snapshot(ctx, cwd)
-	if err != nil {
-		slog.Warn("turn snapshot", "thread", s.row.ThreadID, "err", err)
-	}
+	base := m.snapshot(ctx, s, "turn snapshot")
 	m.mu.Lock()
 	s.turnBase = base
 	m.mu.Unlock()

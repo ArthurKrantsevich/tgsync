@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 
 	claude "github.com/ProjAnvil/claude-agent-sdk-golang"
 )
@@ -85,6 +87,14 @@ type sdkSession struct {
 // means the CLI process is gone, so the events channel is closed.
 func (s *sdkSession) pump(ctx context.Context) {
 	defer close(s.events)
+	defer func() {
+		// Anything else that panics here ends only this process: the closed
+		// events channel tells the session that claude is gone.
+		if r := recover(); r != nil {
+			slog.Error("panic reading claude events", "panic", r, "stack", string(debug.Stack()))
+			s.cancel()
+		}
+	}()
 	for {
 		ch, err := s.client.ReceiveResponse(ctx)
 		if err != nil {
@@ -92,7 +102,7 @@ func (s *sdkSession) pump(ctx context.Context) {
 		}
 		gotResult := false
 		for msg := range ch {
-			for _, ev := range convert(msg) {
+			for _, ev := range safeConvert(msg) {
 				if ev.Kind == EventResult {
 					gotResult = true
 				}
@@ -107,6 +117,18 @@ func (s *sdkSession) pump(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// safeConvert is convert on pump's goroutine, where a panic would end the
+// node: a message that breaks it is logged and becomes an error event.
+func safeConvert(msg claude.Message) (evs []Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic converting a claude message", "type", fmt.Sprintf("%T", msg), "panic", r, "stack", string(debug.Stack()))
+			evs = []Event{{Kind: EventError, Err: fmt.Errorf("tgsync: сообщение claude пропущено из-за внутренней ошибки: %v", r)}}
+		}
+	}()
+	return convert(msg)
 }
 
 func (s *sdkSession) Events() <-chan Event { return s.events }

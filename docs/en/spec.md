@@ -340,8 +340,9 @@ next message.
 
 ### 5.2 Protected tgsync files
 
-The protected list is: the absolute paths of `.env`, the database, and the
-database's `-wal` and `-shm` files. They are:
+The protected list is: the absolute paths of `.env`, the database, the
+database's `-wal` and `-shm` files, `profiles.yaml` and the askpass socket.
+They are:
 
 - **Denied** for Bash commands that contain the path literally (on Windows
   also with `/`, doubled slashes and Git Bash `/c/…` forms; case-folded on
@@ -472,9 +473,8 @@ with `/` is never taken as the password.
   CLI allows by itself (its own permission mode such as `acceptEdits`, allow
   rules in Claude Code settings, read access it grants without asking) are
   not evaluated by tgsync.
-- `profiles.yaml` and the askpass socket are in tgsync's folder but not in the
-  protected list; the reach check covers Bash access to the folder, but a
-  file-tool write outside the project is an ordinary `Ask`.
+- Other files in tgsync's folder are not in the protected list; the reach check covers Bash access to the folder, but a file-tool
+  write outside the project is an ordinary `Ask`.
 - `SUDO_MODE=env` keeps a root-capable password on disk in `.env`.
 - Anyone who can post as an allowed user in the group controls the node.
 
@@ -487,16 +487,24 @@ with `/` is never taken as the password.
 `files.Snapshot(dir)`:
 
 1. If `dir` is not in a git work tree, returns `""` (no summary buttons).
-2. Copies the repository's index to a temporary file (keeping git's stat
-   cache), sets `GIT_INDEX_FILE` to it, runs
-   `git --literal-pathspecs add -A -- .` in the project directory and
-   `git write-tree`. The tree hash is the snapshot. The user's index, refs,
-   stash and working tree are not changed. Ignored files are excluded; only
-   the project directory is added.
+2. Uses a side index kept per repository and project directory in the user
+   cache folder (`tgsync/snapshots/<hash>.index`, mode 0600). A missing one
+   is seeded from a copy of the repository's index with its mtime kept;
+   after that only git writes it, so its stat cache covers untracked files
+   too and git's racy-entry check stays intact. Files tracked in the side
+   index but now ignored (and not tracked by the user) are dropped; files
+   the user tracks despite ignore rules are added. With `GIT_INDEX_FILE`
+   set to it, it runs `git --literal-pathspecs add -A -- .` in the project
+   directory and `git write-tree`. The tree hash is the snapshot. The
+   user's index, refs, stash and working tree are not changed. Ignored
+   files are excluded; only the project directory is added. A side index
+   git rejects is removed and seeded again once.
 3. Each git call has a 30 s timeout.
 
 A snapshot is taken when a turn starts (and for continuation turns). At turn
-end a second snapshot is taken only if the turn changed files.
+end a second snapshot is taken only if the turn changed files. When a
+snapshot fails, the turn summary has no figures and buttons, and the topic
+gets a short note once (again only after a snapshot has worked since).
 
 ### 6.2 Changed files and statistics
 

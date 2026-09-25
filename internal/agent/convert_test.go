@@ -60,6 +60,16 @@ func TestConvertAssistantError(t *testing.T) {
 	}
 }
 
+// TestSafeConvertRecoversPanic: pump converts messages on its own goroutine;
+// a panic there would end the node. A message that breaks convert becomes
+// an error event instead.
+func TestSafeConvertRecoversPanic(t *testing.T) {
+	evs := safeConvert((*claude.SystemMessage)(nil))
+	if len(evs) != 1 || evs[0].Kind != EventError || evs[0].Err == nil {
+		t.Fatalf("events: %+v", evs)
+	}
+}
+
 func TestConvertToolResult(t *testing.T) {
 	evs := convert(&claude.UserMessage{Content: []claude.ContentBlock{
 		&claude.ToolResultBlock{ToolUseID: "t1", IsError: true},

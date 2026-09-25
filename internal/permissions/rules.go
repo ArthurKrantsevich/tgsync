@@ -60,7 +60,7 @@ func sudoOffReason(goos string) string {
 const sudoWrappedReason = "tgsync: sudo поддерживается только прямым вызовом (sudo команда …), " +
 	"не через env, xargs, find -exec, sh -c и подобные обёртки. Перепиши команду."
 
-// Evaluate applies the automatic rules from spec section 8.2. Commands with
+// Evaluate applies the automatic rules of docs/en/spec.md §5.3. Commands with
 // sudo are denied here; the broker turns that into an approval prompt when
 // SUDO_MODE is on.
 func Evaluate(in Input) (Decision, string) {

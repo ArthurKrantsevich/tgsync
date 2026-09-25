@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -527,6 +528,52 @@ func TestDeletedTopicClosesSession(t *testing.T) {
 	}
 }
 
+// editGoneAPI answers edits in a deleted topic the way Telegram likely
+// does: "message to edit not found", not "topic deleted".
+type editGoneAPI struct{ *telegram.Fake }
+
+func (a editGoneAPI) EditMessage(ctx context.Context, msgID int, html string, kb telegram.Keyboard) error {
+	err := a.Fake.EditMessage(ctx, msgID, html, kb)
+	if errors.Is(err, telegram.ErrTopicGone) {
+		return fmt.Errorf("%w: message to edit not found", telegram.ErrMessageGone)
+	}
+	return err
+}
+
+func TestEditInDeletedTopicClosesSession(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	e.m.d.API = editGoneAPI{e.api}
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	e.api.DeleteTopic(thread)
+	s.Emit(agent.Event{Kind: agent.EventToolUse, ToolName: "Read", ToolInput: map[string]any{"file_path": "/w/demo/a.go"}})
+	testutil.Eventually(t, "session dropped", func() bool { return !e.m.Owns(thread) && s.Closed() })
+}
+
+func TestEditOfDeletedMessageKeepsSession(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	e.m.d.API = editGoneAPI{e.api}
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	var status int
+	testutil.Eventually(t, "status message", func() bool {
+		e.m.mu.Lock()
+		defer e.m.mu.Unlock()
+		status = e.m.sessions[thread].statusMsg
+		return status != 0
+	})
+	if err := e.api.DeleteMessage(ctx, status); err != nil { // the user removed just this message
+		t.Fatal(err)
+	}
+	s.Emit(agent.Event{Kind: agent.EventToolUse, ToolName: "Read", ToolInput: map[string]any{"file_path": "/w/demo/a.go"}})
+	s.Emit(agent.Event{Kind: agent.EventText, Text: "done"})
+	s.Emit(result())
+	e.hasMessage(t, thread, "Ход завершён")
+	if !e.m.Owns(thread) || s.Closed() {
+		t.Fatal("a deleted message is not a deleted topic")
+	}
+}
+
 func TestProbeClosesIdleSessionWithDeletedTopic(t *testing.T) {
 	e, ctx := newEnv(t, 3), context.Background()
 	gone, _ := e.m.New(ctx, "demo", "/w/demo", "")
@@ -848,6 +895,44 @@ func TestMaxTurnDuration(t *testing.T) {
 	if s.Interrupts() != 1 {
 		t.Fatalf("interrupts: %d", s.Interrupts())
 	}
+}
+
+// TestMaxTurnInterruptFailureBacksOff: an interrupt that keeps failing is
+// retried once a minute, with one warning per attempt, not on every tick.
+func TestMaxTurnInterruptFailureBacksOff(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	c := withClock(e)
+	e.m.d.MaxTurn = time.Hour
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	s.SetInterruptErr(fmt.Errorf("control channel closed"))
+	warnings := func() int {
+		n := 0
+		for _, m := range e.api.Messages(thread) {
+			if strings.Contains(m.HTML, "прервать его не удалось") {
+				n++
+			}
+		}
+		return n
+	}
+	c.add(61 * time.Minute)
+	e.m.tick(ctx)
+	testutil.Eventually(t, "first warning", func() bool { return warnings() == 1 })
+	for i := 0; i < 5; i++ { // ticks come every second
+		c.add(time.Second)
+		e.m.tick(ctx)
+	}
+	time.Sleep(50 * time.Millisecond) // notifyTimers runs in its own goroutine
+	if n, w := s.Interrupts(), warnings(); n != 1 || w != 1 {
+		t.Fatalf("within a minute: interrupts=%d warnings=%d, want 1 and 1", n, w)
+	}
+	c.add(time.Minute)
+	e.m.tick(ctx)
+	testutil.Eventually(t, "retry after a minute", func() bool { return s.Interrupts() == 2 && warnings() == 2 })
+	s.SetInterruptErr(nil)
+	c.add(time.Minute)
+	e.m.tick(ctx)
+	e.hasMessage(t, thread, "прерываю")
 }
 
 func TestProfileAppliedToProcess(t *testing.T) {

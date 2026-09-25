@@ -42,16 +42,17 @@ type FakeSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu         sync.Mutex
-	events     chan Event
-	sent       []string
-	interrupts int
-	stopped    []string
-	ctxInfo    *ContextInfo
-	ctxErr     error
-	ctxDelay   time.Duration
-	mode       string
-	closed     bool
+	mu           sync.Mutex
+	events       chan Event
+	sent         []string
+	interrupts   int
+	interruptErr error
+	stopped      []string
+	ctxInfo      *ContextInfo
+	ctxErr       error
+	ctxDelay     time.Duration
+	mode         string
+	closed       bool
 }
 
 func (s *FakeSession) Events() <-chan Event { return s.events }
@@ -70,7 +71,14 @@ func (s *FakeSession) Interrupt(context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.interrupts++
-	return nil
+	return s.interruptErr
+}
+
+// SetInterruptErr makes the following Interrupt calls fail with err.
+func (s *FakeSession) SetInterruptErr(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.interruptErr = err
 }
 
 func (s *FakeSession) StopTask(_ context.Context, id string) error {

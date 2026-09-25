@@ -3,18 +3,30 @@ package files
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const gitTimeout = 30 * time.Second
+
+// CacheDir is the base of the side indexes (see Snapshot); tests point it
+// elsewhere.
+var CacheDir = os.UserCacheDir
+
+// sideLocks serializes snapshots sharing a side index: git refuses a second
+// writer of an index while the first holds its lock file.
+var sideLocks sync.Map // side index path → *sync.Mutex
 
 // git runs git in dir; env entries are added to the environment.
 func git(ctx context.Context, dir string, env []string, args ...string) ([]byte, error) {
@@ -39,8 +51,15 @@ func git(ctx context.Context, dir string, env []string, args ...string) ([]byte,
 
 // Snapshot writes the whole working tree, untracked files included and
 // ignored files excluded, as a git tree and returns its hash. It goes
-// through a temporary copy of the index, so the user's index, refs and stash
-// stay as they are. Outside git it returns "" and no error.
+// through a side index of its own, so the user's index, refs and stash stay
+// as they are. Outside git it returns "" and no error.
+//
+// The side index is kept between snapshots (one per repository and project
+// folder, under CacheDir): its stat cache then covers untracked files too,
+// and a big untracked folder is hashed once instead of twice per turn. It
+// starts as a copy of the user's index. Only git writes it afterwards, so
+// git's check for entries not older than the index ("racy git") works as
+// in the user's own index.
 func Snapshot(ctx context.Context, dir string) (string, error) {
 	if _, err := git(ctx, dir, []string{"LC_ALL=C"}, "rev-parse", "--is-inside-work-tree"); err != nil {
 		if strings.Contains(err.Error(), "not a git repository") {
@@ -48,33 +67,87 @@ func Snapshot(ctx context.Context, dir string) (string, error) {
 		}
 		return "", err // safe.directory, a timeout, a missing dir: worth a log line
 	}
+	orig, err := userIndex(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	side := sideIndex(orig, dir)
+	if side == "" { // no cache folder: a one-off copy, as good as the first snapshot
+		tmp, err := os.MkdirTemp("", "tgsync-index-*")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(tmp)
+		return snapshotWith(ctx, dir, orig, filepath.Join(tmp, "index"))
+	}
+	mu, _ := sideLocks.LoadOrStore(side, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+	tree, err := snapshotWith(ctx, dir, orig, side)
+	if err != nil && ctx.Err() == nil {
+		// A damaged side index, or one whose blobs git gc pruned: start
+		// over from the user's index.
+		slog.Debug("snapshot side index reset", "dir", dir, "err", err)
+		_ = os.Remove(side)
+		tree, err = snapshotWith(ctx, dir, orig, side)
+	}
+	// Git writes the index with its umask; the folder is private already,
+	// the file follows. A mode change keeps the mtime the racy check needs.
+	_ = os.Chmod(side, 0o600)
+	return tree, err
+}
+
+// userIndex returns the absolute path of the repository's index.
+func userIndex(ctx context.Context, dir string) (string, error) {
 	out, err := git(ctx, dir, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 	if err != nil {
 		return "", err
 	}
-	tmp, err := os.CreateTemp("", "tgsync-index-*")
+	return strings.TrimSpace(string(out)), nil
+}
+
+// sidePath returns the side index of dir's repository and project folder,
+// "" when there is no cache folder.
+func sidePath(ctx context.Context, dir string) (string, error) {
+	orig, err := userIndex(ctx, dir)
 	if err != nil {
 		return "", err
 	}
-	idx := tmp.Name()
-	tmp.Close()
-	defer os.Remove(idx)
-	// The copy keeps git's stat cache: unchanged files are not hashed again.
-	orig := strings.TrimSpace(string(out))
-	if data, err := os.ReadFile(orig); err == nil {
-		if err := os.WriteFile(idx, data, 0o600); err != nil {
+	return sideIndex(orig, dir), nil
+}
+
+// sideIndex names the side index of index orig for project folder dir. The
+// folder is part of the key: a snapshot covers only its folder, so projects
+// sharing a repository keep their own caches.
+func sideIndex(orig, dir string) string {
+	base, err := CacheDir()
+	if err != nil || base == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	folder := filepath.Join(base, "tgsync", "snapshots")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(orig) + "\x00" + filepath.Clean(abs)))
+	return filepath.Join(folder, hex.EncodeToString(sum[:12])+".index")
+}
+
+// snapshotWith takes the snapshot through index idx, seeding it from orig
+// when it does not exist yet.
+func snapshotWith(ctx context.Context, dir, orig, idx string) (string, error) {
+	if _, err := os.Stat(idx); os.IsNotExist(err) {
+		if err := seedIndex(orig, idx); err != nil {
 			return "", err
 		}
-		// Git re-reads a file whose stat matches its entry only when the
-		// entry is not older than the index ("racy git"). The copy keeps the
-		// original's mtime, or a same-size edit in the same second is missed.
-		if st, err := os.Stat(orig); err == nil {
-			_ = os.Chtimes(idx, st.ModTime(), st.ModTime())
-		}
-	} else {
-		os.Remove(idx) // git rejects an empty index file; a missing one is fine
 	}
 	env := []string{"GIT_INDEX_FILE=" + idx}
+	if err := syncIgnored(ctx, dir, env); err != nil {
+		return "", err
+	}
 	// Only the project dir: outside it the tree keeps the index's content,
 	// and big untracked files elsewhere in the repo are not hashed each turn.
 	if _, err := git(ctx, dir, env, "add", "-A", "--", "."); err != nil {
@@ -85,6 +158,103 @@ func Snapshot(ctx context.Context, dir string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(tree)), nil
+}
+
+// seedIndex copies the user's index orig to idx. A missing orig leaves idx
+// missing too: git rejects an empty index file, but starts a missing one.
+func seedIndex(orig, idx string) error {
+	data, err := os.ReadFile(orig)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	st, err := os.Stat(orig)
+	if err != nil {
+		return err
+	}
+	tmp := idx + ".seed"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	// Git re-reads a file whose stat matches its entry only when the entry
+	// is not older than the index ("racy git"). The copy keeps the
+	// original's mtime, or a same-size edit in the same second is missed.
+	if err := os.Chtimes(tmp, st.ModTime(), st.ModTime()); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, idx); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// syncIgnored makes the side index track the same ignored files as the
+// user's index. `add -A` never drops a tracked file, so without it a file
+// ignored after a snapshot would stay in every later one, and a file the
+// user added with -f would be missing when the side index is older.
+func syncIgnored(ctx context.Context, dir string, side []string) error {
+	ignored := func(env []string) (map[string]bool, error) {
+		out, err := git(ctx, dir, env, "ls-files", "-z", "-c", "-i", "--exclude-standard", "--", ".")
+		if err != nil {
+			return nil, err
+		}
+		set := map[string]bool{}
+		for _, p := range strings.Split(string(out), "\x00") {
+			if p != "" {
+				set[p] = true
+			}
+		}
+		return set, nil
+	}
+	user, err := ignored(nil)
+	if err != nil {
+		return err
+	}
+	have, err := ignored(side)
+	if err != nil {
+		return err
+	}
+	var drop, add []string
+	for p := range have {
+		if !user[p] {
+			drop = append(drop, p)
+		}
+	}
+	for p := range user {
+		if !have[p] {
+			add = append(add, p)
+		}
+	}
+	if len(drop) > 0 {
+		if err := gitStdin(ctx, dir, side, drop, "update-index", "-z", "--force-remove", "--stdin"); err != nil {
+			return err
+		}
+	}
+	if len(add) > 0 {
+		if err := gitStdin(ctx, dir, side, add, "update-index", "-z", "--add", "--remove", "--stdin"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// gitStdin runs git with paths on stdin, NUL-terminated.
+func gitStdin(ctx context.Context, dir string, env, paths []string, args ...string) error {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 // Stat is one file's change during a turn.

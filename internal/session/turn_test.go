@@ -345,3 +345,34 @@ func TestAttachRefusesSecondTopicForSameSession(t *testing.T) {
 		t.Fatalf("a fork gets its own session: %v", err)
 	}
 }
+
+// TestSnapshotFailureToldOnce: a turn whose git snapshot fails loses its
+// statistics and buttons; the user hears why once, not after every turn.
+func TestSnapshotFailureToldOnce(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	dir := gitProject(t, map[string]string{"a.go": "a\n"})
+	write(t, dir, ".git/index", "garbage") // every snapshot fails now
+	thread, _ := e.m.New(ctx, "demo", dir, "edit")
+	s := e.session(t, 0)
+	write(t, dir, "a.go", "b\n")
+	agentTurn(s, dir, "a.go")
+	e.hasMessage(t, thread, "Изменено за ход: 1")
+	e.hasMessage(t, thread, "git-снимок")
+	_ = e.m.Message(ctx, thread, "again")
+	testutil.Eventually(t, "second turn", func() bool { return len(s.Sent()) == 2 })
+	write(t, dir, "a.go", "c\n")
+	agentTurn(s, dir, "a.go")
+	count := func(substr string) int {
+		n := 0
+		for _, m := range e.api.Messages(thread) {
+			if strings.Contains(m.HTML, substr) {
+				n++
+			}
+		}
+		return n
+	}
+	testutil.Eventually(t, "second summary", func() bool { return count("Изменено за ход") == 2 })
+	if n := count("git-снимок"); n != 1 {
+		t.Fatalf("snapshot notes: %d, want 1", n)
+	}
+}
