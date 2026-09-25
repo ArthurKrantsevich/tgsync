@@ -119,6 +119,8 @@ type sess struct {
 	lastText     string               // last top-level answer of the turn, scanned for file paths
 	pending      string               // top-level text not shown yet: the final answer, or a remark before the next tool call
 	interrupted  bool                 // the node interrupted this turn (/stop, «send now», time limit)
+	snapWarned   bool                 // the user was told that git snapshots fail
+	retryAt      time.Time            // MAX_TURN_DURATION: next interrupt attempt after a failed one
 	panel        *agentPanel          // the latest agents panel, nil before the first agent
 	agentCalls   map[string]agentCall // Agent tool calls not yet matched to a task, by tool use id
 	lastFinished string               // name of the agent that finished last, for continuation turns
@@ -362,7 +364,12 @@ func (m *Manager) schedule(ctx context.Context) {
 		if run == nil {
 			return
 		}
-		m.startTurn(ctx, run)
+		if m.safely("startTurn", run, func() { m.startTurn(ctx, run) }) {
+			m.safely("startTurn recovery", run, func() {
+				m.say(ctx, run, internalError+" Напиши сообщение, чтобы продолжить.", false)
+				m.failTurn(ctx, run)
+			})
+		}
 	}
 }
 
@@ -454,7 +461,7 @@ func (m *Manager) startTurn(ctx context.Context, s *sess) {
 			CLIPath: m.d.CLIPath,
 			CanUseTool: m.d.Broker.CanUseTool(permissions.SessionInfo{
 				ThreadID: row.ThreadID, Project: row.Project, ProjectDir: row.Cwd, Protected: m.d.Protected,
-				OnWait: func(waiting bool) { m.onWait(s, waiting) },
+				OnWait: func(waiting bool) { m.safely("onWait", s, func() { m.onWait(s, waiting) }) },
 			}),
 			Env:                env,
 			AppendSystemPrompt: prompt,
@@ -476,10 +483,7 @@ func (m *Manager) startTurn(ctx context.Context, s *sess) {
 		go m.readEvents(s, a)
 	}
 
-	base, serr := files.Snapshot(ctx, row.Cwd)
-	if serr != nil {
-		slog.Warn("turn snapshot", "thread", row.ThreadID, "err", serr)
-	}
+	base := m.snapshot(ctx, s, "turn snapshot")
 	now := m.d.Now()
 	m.mu.Lock()
 	s.turnNo++
@@ -488,7 +492,7 @@ func (m *Manager) startTurn(ctx context.Context, s *sess) {
 	note := s.rollbackNote
 	s.status = render.Status{State: store.StateRunning, Started: now, LastEvent: now}
 	s.lastEdit, s.dirty, s.waits = now, false, 0
-	s.warned, s.overtime, s.stallFrom = false, false, time.Time{}
+	s.warned, s.overtime, s.stallFrom, s.retryAt = false, false, time.Time{}, time.Time{}
 	s.lastText, s.pending, s.interrupted = "", "", false
 	status := s.status
 	m.mu.Unlock()
@@ -546,8 +550,32 @@ func (m *Manager) abortTurn(ctx context.Context, s *sess, it *inboxItem, html st
 }
 
 func (m *Manager) readEvents(s *sess, a agent.Session) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		m.crashed("readEvents", s, r)
+		_ = a.Close()
+		m.mu.Lock()
+		current := s.agent == a || s.agent == nil
+		if s.agent == a {
+			s.agent = nil
+		}
+		m.mu.Unlock()
+		if current { // the turn belongs to this process: it is gone now
+			ctx := context.Background()
+			m.safely("readEvents recovery", s, func() {
+				m.say(ctx, s, internalError, false)
+				m.failTurn(ctx, s)
+				m.schedule(ctx)
+			})
+		}
+	}()
 	for ev := range a.Events() {
-		m.handleEvent(s, ev)
+		if m.safely("handleEvent", s, func() { m.handleEvent(s, ev) }) {
+			m.safely("handleEvent recovery", s, func() { m.eventPanicked(s, ev) })
+		}
 	}
 	ctx := context.Background()
 	_ = a.Close()
@@ -752,11 +780,7 @@ func (m *Manager) finishTurn(ctx context.Context, s *sess, r agent.ResultInfo) {
 	if turn.base != "" && len(changed) > 0 {
 		// The end state is taken now: the next turn or the user may change
 		// the files before the summary and its buttons are used.
-		end, err := files.Snapshot(ctx, s.row.Cwd)
-		if err != nil {
-			slog.Warn("turn end snapshot", "thread", s.row.ThreadID, "err", err)
-		}
-		turn.end = end
+		turn.end = m.snapshot(ctx, s, "turn end snapshot")
 	}
 
 	// The answer and the result line go out as one message when they fit;
@@ -954,7 +978,7 @@ func (m *Manager) topicGone(s *sess) {
 	if err := m.d.Store.MarkTopicDeleted(ctx, row.ThreadID); err != nil {
 		slog.Warn("mark topic deleted", "thread", row.ThreadID, "err", err)
 	}
-	go m.schedule(ctx)
+	go m.safely("schedule", nil, func() { m.schedule(ctx) })
 }
 
 // TopicRemoved drops a session whose topic the cleanup deleted.
@@ -1013,30 +1037,36 @@ func (m *Manager) Run(ctx context.Context) {
 	defer t.Stop()
 	probe := time.NewTicker(m.d.ProbeInterval)
 	defer probe.Stop()
-	m.probeTopics(ctx)
+	m.safely("probeTopics", nil, func() { m.probeTopics(ctx) })
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-probe.C:
-			m.probeTopics(ctx)
+			m.safely("probeTopics", nil, func() { m.probeTopics(ctx) })
 		case <-t.C:
-			m.tick(ctx)
-			m.mu.Lock()
-			var live []*sess
-			for _, s := range m.sessions {
-				if s.inTurn && s.statusMsg != 0 {
-					s.dirty = true
-					live = append(live, s)
-				}
-			}
-			m.mu.Unlock()
-			for _, s := range live {
-				m.maybeFlush(ctx, s, false)
-			}
-			m.refreshPanels(ctx)
+			m.runTick(ctx)
 		}
 	}
+}
+
+// runTick is one beat of Run: time limits, status messages, agent panels.
+// A panic in one step does not stop the others or the loop.
+func (m *Manager) runTick(ctx context.Context) {
+	m.safely("tick", nil, func() { m.tick(ctx) })
+	m.mu.Lock()
+	var live []*sess
+	for _, s := range m.sessions {
+		if s.inTurn && s.statusMsg != 0 {
+			s.dirty = true
+			live = append(live, s)
+		}
+	}
+	m.mu.Unlock()
+	for _, s := range live {
+		m.safely("status refresh", s, func() { m.maybeFlush(ctx, s, false) })
+	}
+	m.safely("agent panels", nil, func() { m.refreshPanels(ctx) })
 }
 
 // interrupt stops the running turn and withdraws its open prompts. The CLI
@@ -1241,7 +1271,15 @@ func (m *Manager) sendFileTool(s *sess) agent.Tool {
 			"path":    map[string]any{"type": "string", "description": "file path, relative to the project or absolute inside it"},
 			"caption": map[string]any{"type": "string", "description": "short note shown with the file"},
 		}, "required": []any{"path"}},
-		Handler: func(args map[string]any) (string, error) {
+		Handler: func(args map[string]any) (out string, err error) {
+			// Called on the agent library's goroutine: a panic here would
+			// end the node.
+			defer func() {
+				if r := recover(); r != nil {
+					m.crashed("send_file", s, r)
+					out, err = "", errors.New("tgsync: внутренняя ошибка при отправке файла")
+				}
+			}()
 			p, _ := args["path"].(string)
 			caption, _ := args["caption"].(string)
 			sent, err := m.sendFile(context.Background(), s, p, caption, false)
@@ -1287,6 +1325,12 @@ const maxAutoSend = 5
 // deliverFiles runs after a turn: it sends documents the agent pointed to
 // and files matching AUTO_SEND_GLOBS, then lists the files changed in the turn.
 func (m *Manager) deliverFiles(ctx context.Context, s *sess, text string, changed []string, turn turnInfo) {
+	defer func() {
+		if r := recover(); r != nil {
+			m.crashed("deliverFiles", s, r)
+			m.safely("deliverFiles recovery", s, func() { m.say(ctx, s, internalError+" Сводка хода не собрана.", true) })
+		}
+	}()
 	seen := map[string]bool{}
 	var send []string
 	add := func(rel string) {
@@ -1437,8 +1481,11 @@ func (m *Manager) tick(ctx context.Context) {
 			s.warned = true
 			stalled = append(stalled, stall{s, now.Sub(s.status.LastEvent)})
 		}
-		if m.d.MaxTurn > 0 && !s.overtime && now.Sub(s.status.Started) >= m.d.MaxTurn {
+		if m.d.MaxTurn > 0 && !s.overtime && now.Sub(s.status.Started) >= m.d.MaxTurn && !now.Before(s.retryAt) {
 			s.overtime = true
+			// Claimed for a minute: a failed interrupt is retried (and
+			// reported) once a minute, not on every tick.
+			s.retryAt = now.Add(interruptRetry)
 			overtime = append(overtime, s)
 		}
 	}
@@ -1450,6 +1497,9 @@ func (m *Manager) tick(ctx context.Context) {
 	go m.notifyTimers(ctx, now, stalled, overtime)
 }
 
+// interruptRetry is how often MAX_TURN_DURATION retries a failed interrupt.
+const interruptRetry = time.Minute
+
 // stall is a turn without activity; quiet is measured under m.mu.
 type stall struct {
 	s     *sess
@@ -1457,6 +1507,11 @@ type stall struct {
 }
 
 func (m *Manager) notifyTimers(ctx context.Context, now time.Time, stalled []stall, overtime []*sess) {
+	defer func() {
+		if r := recover(); r != nil {
+			m.crashed("notifyTimers", nil, r)
+		}
+	}()
 	for _, st := range stalled {
 		key := strconv.Itoa(st.s.row.ThreadID)
 		kb := telegram.Keyboard{{{Text: "⏳ Ждать", Data: "w:" + key}, {Text: "⏹ Остановить", Data: "x:" + key}}}
@@ -1472,9 +1527,9 @@ func (m *Manager) notifyTimers(ctx context.Context, now time.Time, stalled []sta
 		if a != nil {
 			if err := m.interrupt(ctx, s, a); err != nil {
 				m.mu.Lock()
-				s.overtime = false // the next tick tries again
+				s.overtime = false // tick tries again once retryAt has passed
 				m.mu.Unlock()
-				m.say(ctx, s, fmt.Sprintf("⚠️ Ход идёт дольше MAX_TURN_DURATION (%s), но прервать его не удалось: %s",
+				m.say(ctx, s, fmt.Sprintf("⚠️ Ход идёт дольше MAX_TURN_DURATION (%s), но прервать его не удалось: %s. Попробую снова через минуту.",
 					render.Duration(m.d.MaxTurn), render.Escape(err.Error())), false)
 				continue
 			}

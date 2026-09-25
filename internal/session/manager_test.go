@@ -850,6 +850,44 @@ func TestMaxTurnDuration(t *testing.T) {
 	}
 }
 
+// TestMaxTurnInterruptFailureBacksOff: an interrupt that keeps failing is
+// retried once a minute, with one warning per attempt, not on every tick.
+func TestMaxTurnInterruptFailureBacksOff(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	c := withClock(e)
+	e.m.d.MaxTurn = time.Hour
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	s.SetInterruptErr(fmt.Errorf("control channel closed"))
+	warnings := func() int {
+		n := 0
+		for _, m := range e.api.Messages(thread) {
+			if strings.Contains(m.HTML, "прервать его не удалось") {
+				n++
+			}
+		}
+		return n
+	}
+	c.add(61 * time.Minute)
+	e.m.tick(ctx)
+	testutil.Eventually(t, "first warning", func() bool { return warnings() == 1 })
+	for i := 0; i < 5; i++ { // ticks come every second
+		c.add(time.Second)
+		e.m.tick(ctx)
+	}
+	time.Sleep(50 * time.Millisecond) // notifyTimers runs in its own goroutine
+	if n, w := s.Interrupts(), warnings(); n != 1 || w != 1 {
+		t.Fatalf("within a minute: interrupts=%d warnings=%d, want 1 and 1", n, w)
+	}
+	c.add(time.Minute)
+	e.m.tick(ctx)
+	testutil.Eventually(t, "retry after a minute", func() bool { return s.Interrupts() == 2 && warnings() == 2 })
+	s.SetInterruptErr(nil)
+	c.add(time.Minute)
+	e.m.tick(ctx)
+	e.hasMessage(t, thread, "прерываю")
+}
+
 func TestProfileAppliedToProcess(t *testing.T) {
 	e, ctx := newEnv(t, 3), context.Background()
 	e.m.d.Profiles = func(name, project string) (string, agent.StartOptions, error) {
