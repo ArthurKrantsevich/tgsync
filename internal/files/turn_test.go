@@ -8,7 +8,34 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestSnapshotSeesSameSizeEditInSameSecond: git trusts a file whose size and
+// mtime match its index entry, unless the entry is "racy" (not older than
+// the index file). A snapshot must keep that check, or an edit that keeps
+// the size within the same second is lost.
+func TestSnapshotSeesSameSizeEditInSameSecond(t *testing.T) {
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "old\n"})
+	at := time.Now().Add(-time.Hour).Truncate(time.Second) // well before any copy of the index
+	stamp := func(name string) {
+		if err := os.Chtimes(filepath.Join(dir, name), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stamp("a.go")
+	gitT(t, dir, "update-index", "--refresh") // the index records a.go at `at`
+	stamp(".git/index")
+	base, _ := Snapshot(ctx, dir)
+	writeT(t, dir, "a.go", "new\n") // same size, same second
+	stamp("a.go")
+	end, _ := Snapshot(ctx, dir)
+	st, err := TurnStats(ctx, dir, base, end, []string{"a.go"})
+	if err != nil || len(st) != 1 || st[0].Added != 1 || st[0].Deleted != 1 {
+		t.Fatalf("the edit was lost: %+v %v", st, err)
+	}
+}
 
 // repo creates a git repo with the files committed.
 func repo(t *testing.T, fs map[string]string) string {
