@@ -13,3 +13,10 @@ func osPath(p string) string {
 	}
 	return p
 }
+
+// shellPath is osPath as the agent's shell spells it: C:/etc/hosts in Git
+// Bash on Windows. A driveless /etc/hosts there is under Git's own root,
+// not C:\etc\hosts.
+func shellPath(p string) string {
+	return filepath.ToSlash(osPath(p))
+}
