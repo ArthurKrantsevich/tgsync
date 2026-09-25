@@ -417,6 +417,155 @@ func TestRestoreRemovesEmptyDirs(t *testing.T) {
 	}
 }
 
+// headTree is the tree of HEAD: the snapshot of a clean checkout.
+func headTree(t *testing.T, dir string) string {
+	t.Helper()
+	return strings.TrimSpace(gitT(t, dir, "rev-parse", "HEAD^{tree}"))
+}
+
+// setMtime backdates path by age.
+func setMtime(t *testing.T, path string, age time.Duration) {
+	t.Helper()
+	old := time.Now().Add(-age)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A git killed on its timeout (or on node shutdown) leaves <side>.lock
+// behind. Every later snapshot of that repository used to fail with
+// "index.lock exists", and with it turn summaries and Restore.
+func TestSnapshotRemovesStaleSideLock(t *testing.T) {
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "a\n"})
+	if _, err := Snapshot(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	side, err := sidePath(ctx, dir)
+	if err != nil || side == "" {
+		t.Fatalf("side index: %q %v", side, err)
+	}
+	if err := os.WriteFile(side+".lock", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	setMtime(t, side+".lock", time.Hour)
+	if got, err := Snapshot(ctx, dir); err != nil || got != headTree(t, dir) {
+		t.Fatalf("%q %v, want %q", got, err, headTree(t, dir))
+	}
+	if _, err := os.Stat(side + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("stale lock kept: %v", err)
+	}
+}
+
+// A fresh lock may belong to another node sharing the cache folder: it is
+// left alone, and the snapshot still works through a temporary index.
+func TestSnapshotKeepsFreshSideLock(t *testing.T) {
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "a\n"})
+	if _, err := Snapshot(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	side, _ := sidePath(ctx, dir)
+	if err := os.WriteFile(side+".lock", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(side + ".lock")
+	if got, err := Snapshot(ctx, dir); err != nil || got != headTree(t, dir) {
+		t.Fatalf("%q %v, want %q", got, err, headTree(t, dir))
+	}
+	if _, err := os.Stat(side + ".lock"); err != nil {
+		t.Fatalf("fresh lock removed: %v", err)
+	}
+}
+
+// A git that hit its timeout is not run again from scratch: the retry used
+// to block the turn start or end for another gitTimeout.
+func TestSnapshotNoRetryAfterTimeout(t *testing.T) {
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "a\n"})
+	oldTimeout := gitTimeout
+	gitTimeout = 200 * time.Millisecond
+	adds := 0
+	gitHook = func(ctx context.Context, args []string) {
+		if args[0] == "add" {
+			adds++
+			<-ctx.Done()
+		}
+	}
+	defer func() { gitTimeout, gitHook = oldTimeout, nil }()
+	if _, err := Snapshot(ctx, dir); err == nil {
+		t.Fatal("a timed out git must be an error")
+	}
+	if adds != 1 {
+		t.Fatalf("git add ran %d times, want 1", adds)
+	}
+}
+
+// An unusable cache folder (read-only) used to fail every snapshot; the
+// one-off temporary index works there.
+func TestSnapshotFallsBackWhenCacheReadOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("folder permissions do not stop writes on Windows")
+	}
+	ctx := context.Background()
+	dir := repo(t, map[string]string{"a.go": "a\n"})
+	cache := t.TempDir()
+	folder := filepath.Join(cache, "tgsync", "snapshots")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(folder, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(folder, 0o700)
+	if f, err := os.CreateTemp(folder, "probe"); err == nil { // root ignores modes
+		f.Close()
+		t.Skip("the folder is writable anyway")
+	}
+	old := CacheDir
+	CacheDir = func() (string, error) { return cache, nil }
+	defer func() { CacheDir = old }()
+	if got, err := Snapshot(ctx, dir); err != nil || got != headTree(t, dir) {
+		t.Fatalf("%q %v, want %q", got, err, headTree(t, dir))
+	}
+}
+
+// Side indexes of projects not used for a month are removed; recent ones
+// stay.
+func TestSnapshotPrunesOldSideIndexes(t *testing.T) {
+	ctx := context.Background()
+	cache := t.TempDir()
+	folder := filepath.Join(cache, "tgsync", "snapshots")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old, recent := filepath.Join(folder, "old.index"), filepath.Join(folder, "recent.index")
+	for _, p := range []string{old, old + ".lock", recent} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setMtime(t, old, 31*24*time.Hour)
+	setMtime(t, old+".lock", 31*24*time.Hour)
+	setMtime(t, recent, 24*time.Hour)
+	oldCache := CacheDir
+	CacheDir = func() (string, error) { return cache, nil }
+	defer func() { CacheDir = oldCache }()
+	resetPrune()
+	dir := repo(t, map[string]string{"a.go": "a\n"})
+	if _, err := Snapshot(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{old, old + ".lock"} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s kept: %v", filepath.Base(p), err)
+		}
+	}
+	if _, err := os.Stat(recent); err != nil {
+		t.Fatalf("recent side index removed: %v", err)
+	}
+}
+
 func TestSnapshotReportsGitFailure(t *testing.T) {
 	if _, err := Snapshot(context.Background(), filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("a git failure other than 'not a repository' must be an error")

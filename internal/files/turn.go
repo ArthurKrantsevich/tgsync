@@ -12,13 +12,62 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
-const gitTimeout = 30 * time.Second
+// gitTimeout bounds each git run; tests shorten it.
+var gitTimeout = 30 * time.Second
+
+// gitHook, when set by a test, runs before each git with its context.
+var gitHook func(ctx context.Context, args []string)
+
+// staleLock is the age after which a side index lock is surely abandoned:
+// the git that made it has hit gitTimeout by then. A younger lock may be a
+// live git of another node sharing the cache folder.
+func staleLock() time.Duration { return gitTimeout + 30*time.Second }
+
+// Side indexes not used for sideMaxAge are removed, checked at most once per
+// pruneEvery.
+const (
+	sideMaxAge = 30 * 24 * time.Hour
+	pruneEvery = 24 * time.Hour
+)
+
+var (
+	pruneMu   sync.Mutex
+	lastPrune time.Time
+)
+
+// resetPrune lets the next Snapshot prune again.
+func resetPrune() {
+	pruneMu.Lock()
+	lastPrune = time.Time{}
+	pruneMu.Unlock()
+}
+
+// gitCmd prepares git with options pre and command args in ctx. On
+// cancellation git gets a signal it can handle first, so it removes its lock
+// files itself, and is killed only after WaitDelay; a plain kill leaves
+// index.lock behind. Windows has only the kill.
+func gitCmd(ctx context.Context, pre, args []string) *exec.Cmd {
+	if gitHook != nil {
+		gitHook(ctx, args)
+	}
+	cmd := exec.CommandContext(ctx, "git", append(pre, args...)...)
+	cmd.Cancel = func() error {
+		if runtime.GOOS == "windows" {
+			return cmd.Process.Kill()
+		}
+		return cmd.Process.Signal(syscall.SIGTERM)
+	}
+	cmd.WaitDelay = 5 * time.Second
+	return cmd
+}
 
 // CacheDir is the base of the side indexes (see Snapshot); tests point it
 // elsewhere.
@@ -36,7 +85,7 @@ func git(ctx context.Context, dir string, env []string, args ...string) ([]byte,
 	if args[0] == "check-ignore" { // it rejects pathspec magic, literal included
 		pre = pre[:2]
 	}
-	cmd := exec.CommandContext(ctx, "git", append(pre, args...)...)
+	cmd := gitCmd(ctx, pre, args)
 	if env != nil {
 		cmd.Env = append(os.Environ(), env...)
 	}
@@ -73,28 +122,102 @@ func Snapshot(ctx context.Context, dir string) (string, error) {
 	}
 	side := sideIndex(orig, dir)
 	if side == "" { // no cache folder: a one-off copy, as good as the first snapshot
-		tmp, err := os.MkdirTemp("", "tgsync-index-*")
-		if err != nil {
-			return "", err
-		}
-		defer os.RemoveAll(tmp)
-		return snapshotWith(ctx, dir, orig, filepath.Join(tmp, "index"))
+		return snapshotTemp(ctx, dir, orig)
 	}
-	mu, _ := sideLocks.LoadOrStore(side, &sync.Mutex{})
-	mu.(*sync.Mutex).Lock()
-	defer mu.(*sync.Mutex).Unlock()
+	pruneSides(filepath.Dir(side))
+	mu := sideLock(side)
+	mu.Lock()
+	defer mu.Unlock()
+	// We hold the side index: a lock file left by a git killed mid-write
+	// would fail every snapshot of this repository for good.
+	removeStaleLock(side)
 	tree, err := snapshotWith(ctx, dir, orig, side)
-	if err != nil && ctx.Err() == nil {
-		// A damaged side index, or one whose blobs git gc pruned: start
-		// over from the user's index.
-		slog.Debug("snapshot side index reset", "dir", dir, "err", err)
-		_ = os.Remove(side)
-		tree, err = snapshotWith(ctx, dir, orig, side)
+	if err == nil || ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
+		// A git that ran out of time would only run out of time again.
+		chmodSide(side)
+		return tree, err
 	}
-	// Git writes the index with its umask; the folder is private already,
-	// the file follows. A mode change keeps the mtime the racy check needs.
-	_ = os.Chmod(side, 0o600)
-	return tree, err
+	// A damaged side index, or one whose blobs git gc pruned: start over
+	// from the user's index.
+	slog.Debug("snapshot side index reset", "dir", dir, "err", err)
+	_ = os.Remove(side)
+	tree, err = snapshotWith(ctx, dir, orig, side)
+	chmodSide(side)
+	if err == nil || ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
+		return tree, err
+	}
+	// The side index itself is unusable: a read-only cache folder, or a
+	// lock held by another node. A one-off copy still works.
+	slog.Debug("snapshot through a temporary index", "dir", dir, "err", err)
+	return snapshotTemp(ctx, dir, orig)
+}
+
+// chmodSide keeps the side index private: git writes it with its umask. A
+// mode change keeps the mtime the racy check needs.
+func chmodSide(side string) { _ = os.Chmod(side, 0o600) }
+
+// sideLock returns the in-process lock of side index side.
+func sideLock(side string) *sync.Mutex {
+	mu, _ := sideLocks.LoadOrStore(side, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
+// snapshotTemp takes the snapshot through a one-off copy of the user's index.
+func snapshotTemp(ctx context.Context, dir, orig string) (string, error) {
+	tmp, err := os.MkdirTemp("", "tgsync-index-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp)
+	return snapshotWith(ctx, dir, orig, filepath.Join(tmp, "index"))
+}
+
+// removeStaleLock removes the lock file of side index side when it is older
+// than staleLock. The caller holds the side's in-process lock, so no git of
+// this node uses it.
+func removeStaleLock(side string) {
+	lock := side + ".lock"
+	st, err := os.Stat(lock)
+	if err != nil || time.Since(st.ModTime()) < staleLock() {
+		return
+	}
+	if err := os.Remove(lock); err == nil {
+		slog.Info("removed a stale snapshot index lock", "path", lock)
+	}
+}
+
+// pruneSides removes, at most once per pruneEvery, the side indexes in
+// folder not written for sideMaxAge, with their leftover lock and seed
+// files. A side index in use by this node is skipped.
+func pruneSides(folder string) {
+	pruneMu.Lock()
+	if time.Since(lastPrune) < pruneEvery {
+		pruneMu.Unlock()
+		return
+	}
+	lastPrune = time.Now()
+	pruneMu.Unlock()
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		base := strings.TrimSuffix(strings.TrimSuffix(name, ".lock"), ".seed")
+		if e.IsDir() || !strings.HasSuffix(base, ".index") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || time.Since(info.ModTime()) < sideMaxAge {
+			continue
+		}
+		mu := sideLock(filepath.Join(folder, base))
+		if !mu.TryLock() {
+			continue
+		}
+		_ = os.Remove(filepath.Join(folder, name))
+		mu.Unlock()
+	}
 }
 
 // userIndex returns the absolute path of the repository's index.
@@ -246,7 +369,7 @@ func syncIgnored(ctx context.Context, dir string, side []string) error {
 func gitStdin(ctx context.Context, dir string, env, paths []string, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd := gitCmd(ctx, []string{"-C", dir}, args)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
 	var stderr bytes.Buffer

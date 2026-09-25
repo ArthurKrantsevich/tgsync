@@ -498,8 +498,15 @@ with `/` is never taken as the password.
    directory and `git write-tree`. The tree hash is the snapshot. The
    user's index, refs, stash and working tree are not changed. Ignored
    files are excluded; only the project directory is added. A side index
-   git rejects is removed and seeded again once.
-3. Each git call has a 30 s timeout.
+   git rejects is removed and seeded again once; if that fails too (a
+   read-only cache folder, a lock held by another node), the snapshot goes
+   through a one-off temporary index. A timed-out git is not retried.
+   A `<hash>.index.lock` older than the timeout plus 30 s is left over
+   from a killed git and is removed before use. Side indexes not written
+   for 30 days are removed (checked at most once a day).
+3. Each git call has a 30 s timeout. On timeout or node shutdown git gets
+   SIGTERM first, so it removes its own lock files, and is killed 5 s
+   later (Windows: killed at once).
 
 A snapshot is taken when a turn starts (and for continuation turns). At turn
 end a second snapshot is taken only if the turn changed files. When a
@@ -1024,5 +1031,8 @@ the node folder; run `tgsync check` before registering the service.
 - **MCP servers needing OAuth** cannot be authorized from a bot session; the
   user is told to authorize them in an interactive `claude`.
 - **Voice** blocks the topic's message queue while it is transcribed.
-- **Not covered by panic recovery:** session event readers and tickers; a
-  panic there restarts the whole node through the service manager.
+- **Panics in session goroutines** (event readers, file summaries, ticks,
+  timer notices) are recovered and logged. A panic mid-turn interrupts the
+  turn; if the interrupt fails, the claude process is closed and the next
+  message starts a fresh one resuming the session. Only a panic that leaves
+  the session lock held still restarts the node through the service manager.
