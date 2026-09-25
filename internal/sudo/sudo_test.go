@@ -17,7 +17,8 @@ import (
 
 func TestRewriteCommand(t *testing.T) {
 	const tok = "T"
-	pre := "TGSYNC_SUDO_TOKEN=T "
+	fakeExe(t, "/opt/tg sync/tgsync")
+	pre := "SUDO_ASKPASS='/opt/tg sync/tgsync' TGSYNC_SUDO_TOKEN=T "
 	cases := map[string]struct {
 		want string
 		n    int
@@ -28,6 +29,8 @@ func TestRewriteCommand(t *testing.T) {
 		"sudo a && sudo b":               {pre + "sudo -A a && " + pre + "sudo -A b", 2},
 		"/usr/bin/sudo systemctl reboot": {pre + "/usr/bin/sudo -A systemctl reboot", 1},
 		"FOO=1 sudo env":                 {"FOO=1 " + pre + "sudo -A env", 1},
+		"sudo -R /srv -n id":             {pre + "sudo -A -R /srv id", 1},
+		"/bin/sudo id":                   {pre + "/bin/sudo -A id", 1},
 		"x=$(sudo cat /etc/shadow)":      {"x=$(" + pre + "sudo -A cat /etc/shadow)", 1},
 		`git commit -m "fix sudo docs"`:  {`git commit -m "fix sudo docs"`, 0},
 		`echo "sudo sudo sudo"`:          {`echo "sudo sudo sudo"`, 0},
@@ -70,6 +73,70 @@ func TestRewriteCommand(t *testing.T) {
 		"go test ./internal/sudo", "ls internal/sudo", "gofmt -l internal/sudo/sudo.go"} {
 		if Uses(c) {
 			t.Errorf("Uses(%q) = true, want false", c)
+		}
+	}
+}
+
+// fakeExe makes RewriteCommand name exe as the askpass program.
+func fakeExe(t *testing.T, exe string) {
+	t.Helper()
+	old := askpassExe
+	askpassExe = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { askpassExe = old })
+}
+
+// The agent must not choose the askpass program: sudo would run it with
+// the one-time token and hand it the password.
+func TestRewriteRefusesAskpassOverride(t *testing.T) {
+	fakeExe(t, "/bin/tgsync")
+	for _, c := range []string{
+		"SUDO_ASKPASS=/tmp/x sudo id",
+		"export SUDO_ASKPASS=/tmp/x; sudo id",
+		"export SUDO_ASKPASS; sudo id",
+		"declare -x SUDO_ASKPASS=/tmp/x; sudo id",
+		"env SUDO_ASKPASS=/tmp/x sudo -A id; sudo id",
+		`eval "export SUDO_ASKPASS=/tmp/x"; sudo id`,
+		"./sudo id",
+		"bin/sudo id",
+		"/tmp/x/sudo id",
+		`sudo() { command sudo "$@"; }; sudo id`,
+		"function sudo { /usr/bin/sudo \"$@\"; }; sudo id",
+		"alias sudo=/tmp/s; sudo id",
+		"PATH=/tmp:$PATH sudo id",
+		"PATH=/tmp; sudo id",
+		"export PATH=/tmp:$PATH; sudo id",
+	} {
+		got, _, err := RewriteCommand(c, "T")
+		if err == nil {
+			t.Errorf("RewriteCommand(%q) = %q, want a refusal", c, got)
+		} else if !strings.Contains(err.Error(), "SUDO_ASKPASS") {
+			t.Errorf("RewriteCommand(%q): the reason must say why: %v", c, err)
+		}
+	}
+	for _, c := range []string{"sudo id", "/usr/bin/sudo id", "FOO=1 sudo env", "echo a | sudo tee /etc/x"} {
+		got, _, err := RewriteCommand(c, "T")
+		if err != nil || !strings.Contains(got, "SUDO_ASKPASS=/bin/tgsync TGSYNC_SUDO_TOKEN=T ") {
+			t.Errorf("RewriteCommand(%q) = %q, %v", c, got, err)
+		}
+	}
+}
+
+// A sudo call in a loop or a function runs more than once.
+func TestRewriteCountsRepeatedCalls(t *testing.T) {
+	fakeExe(t, "/bin/tgsync")
+	for cmd, want := range map[string]int{
+		"sudo a":                                  1,
+		"sudo a && sudo b":                        2,
+		"for i in 1 2; do sudo x $i; done":        LoopUses,
+		"while read l; do sudo x; done < f":       LoopUses,
+		"until false; do sudo x; done":            LoopUses,
+		"sudo a; for i in 1 2; do sudo b; done":   1 + LoopUses,
+		"f() { sudo x; }; f; f":                   LoopUses,
+		"sudo cat f | while read l; do :; done":   1,
+		"for i in 1 2; do sudo a && sudo b; done": 2 * LoopUses,
+	} {
+		if _, n, err := RewriteCommand(cmd, "T"); err != nil || n != want {
+			t.Errorf("RewriteCommand(%q) uses = %d, %v; want %d", cmd, n, err, want)
 		}
 	}
 }

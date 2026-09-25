@@ -60,6 +60,15 @@ func sudoOffReason(goos string) string {
 const sudoWrappedReason = "tgsync: sudo поддерживается только прямым вызовом (sudo команда …), " +
 	"не через env, xargs, find -exec, sh -c и подобные обёртки. Перепиши команду."
 
+// sudoRefusal is the deny message for a sudo command sudo.RewriteCommand
+// refused (err) or found no direct sudo call in.
+func sudoRefusal(err error) string {
+	if err != nil && strings.HasPrefix(err.Error(), "tgsync:") {
+		return err.Error()
+	}
+	return sudoWrappedReason
+}
+
 // Evaluate applies the automatic rules of docs/en/spec.md §5.3. Commands with
 // sudo are denied here; the broker turns that into an approval prompt when
 // SUDO_MODE is on.
@@ -81,23 +90,20 @@ func Evaluate(in Input) (Decision, string) {
 			return Confirm, reachReason
 		}
 	}
-	// files.Abs also folds the other spellings Windows opens as the same
-	// file (no drive, Git Bash /c/x, trailing dots, :streams).
+	// Path arguments of file tools: ~ expanded, links followed.
 	path := filePath(in.Args)
 	if path != "" {
-		path = files.Abs(in.ProjectDir, path)
-		for _, p := range in.Protected {
-			if p != "" && (files.SamePath(path, p) || files.SameFile(path, p)) {
-				return Deny, "доступ к служебным файлам tgsync запрещён"
-			}
+		path = toolPath(in, path)
+		if touchesTgsync(in.Protected, path) {
+			return Deny, "доступ к служебным файлам tgsync запрещён"
 		}
 	}
-	if sp, _ := in.Args["path"].(string); sp != "" {
-		sp = files.Abs(in.ProjectDir, sp)
-		for _, p := range in.Protected {
-			if _, inside := files.Within(sp, p); p != "" && inside {
-				return Deny, "доступ к служебным файлам tgsync запрещён"
-			}
+	if sp, _ := in.Args["path"].(string); sp != "" && touchesTgsync(in.Protected, toolPath(in, sp)) {
+		return Deny, "доступ к служебным файлам tgsync запрещён"
+	}
+	if in.Tool == "Glob" {
+		if base := globBase(in.Args); base != "" && touchesTgsync(in.Protected, toolPath(in, base)) {
+			return Deny, "доступ к служебным файлам tgsync запрещён"
 		}
 	}
 	if readOnly[in.Tool] {
@@ -120,7 +126,7 @@ func Evaluate(in Input) (Decision, string) {
 		return Ask, ""
 	}
 	for _, r := range in.Rules {
-		if matchRule(r, in.Tool, cmd) {
+		if matchRule(r, in.Tool, cmd, in.ProjectDir) {
 			return Allow, ""
 		}
 	}
@@ -134,6 +140,114 @@ func filePath(args map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// homeDir is the user's home for ~: in.Home, else the OS one.
+func homeDir(home string) string {
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	return home
+}
+
+// expandTilde expands a leading ~ the way the agent's tools do. ~user is
+// taken as the user's own home too: another user's home is unknown, and
+// on a single-user machine it is the same folder.
+func expandTilde(p, home string) string {
+	if !strings.HasPrefix(p, "~") || home == "" {
+		return p
+	}
+	i := strings.IndexAny(p, `/\`)
+	if i < 0 {
+		return home
+	}
+	return home + p[i:]
+}
+
+// toolPath turns a path argument of a file tool into an absolute path.
+// files.Abs also folds the other spellings Windows opens as the same file
+// (no drive, Git Bash /c/x, trailing dots, :streams).
+func toolPath(in Input, p string) string {
+	return files.Abs(in.ProjectDir, expandTilde(p, homeDir(in.Home)))
+}
+
+// globBase returns the folder a Glob pattern starts from when the pattern
+// itself names one (an absolute, ~ or ../ pattern, or a folder before the
+// first wildcard), or "" when it starts from the path argument.
+func globBase(args map[string]any) string {
+	pat, _ := args["pattern"].(string)
+	i := strings.IndexAny(pat, "*?[{")
+	if i < 0 {
+		i = len(pat)
+	}
+	prefix := pat[:i]
+	j := strings.LastIndexAny(prefix, `/\`)
+	if j < 0 {
+		return ""
+	}
+	prefix = prefix[:j+1]
+	if dir, _ := args["path"].(string); dir != "" && !strings.HasPrefix(prefix, "~") && !filepath.IsAbs(prefix) && !strings.HasPrefix(prefix, "/") {
+		return filepath.Join(dir, prefix)
+	}
+	return prefix
+}
+
+// tgsyncHomes returns the folders holding tgsync's files, without those
+// inside another one: ~/.config/tgsync for .env and data/tgsync.db.
+func tgsyncHomes(protected []string) []string {
+	var dirs, top []string
+	for _, p := range protected {
+		if p != "" {
+			dirs = append(dirs, filepath.Dir(p))
+		}
+	}
+	for _, d := range dirs {
+		inner := false
+		for _, o := range dirs {
+			if !files.SamePath(o, d) && within(o, d) {
+				inner = true
+			}
+		}
+		if !inner {
+			top = append(top, d)
+		}
+	}
+	return top
+}
+
+// touchesTgsync reports whether a file tool pointed at abs reaches tgsync's
+// files: abs is one of them, or a folder holding one or tgsync's folder,
+// by name or once symlinks are followed.
+func touchesTgsync(protected []string, abs string) bool {
+	cands := []string{abs}
+	if r, ok := realPath(abs); ok && !files.SamePath(r, abs) {
+		cands = append(cands, r)
+	}
+	homes := tgsyncHomes(protected)
+	for _, h := range homes {
+		if r, ok := realPath(h); ok && !files.SamePath(r, h) {
+			homes = append(homes, r)
+		}
+	}
+	for _, c := range cands {
+		for _, p := range protected {
+			if p == "" {
+				continue
+			}
+			if within(c, p) || files.SameFile(c, p) {
+				return true
+			}
+			if rp, ok := realPath(p); ok && within(c, rp) {
+				return true
+			}
+		}
+		for _, h := range homes {
+			if within(c, h) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func within(dir, path string) bool {
@@ -281,7 +395,7 @@ func pathForms(p, goos string) []string {
 	return forms
 }
 
-func matchRule(r store.Rule, tool, cmd string) bool {
+func matchRule(r store.Rule, tool, cmd, dir string) bool {
 	if r.Tool != tool {
 		return false
 	}
@@ -294,7 +408,7 @@ func matchRule(r store.Rule, tool, cmd string) bool {
 	c := strings.TrimSpace(cmd)
 	// Rules saved before «Всегда» refused these (a bare "python3" or "rm")
 	// no longer cover them.
-	if onceOnly(strings.Fields(c)) {
+	if onceOnly(strings.Fields(c), dir) {
 		return false
 	}
 	return c == r.Pattern || strings.HasPrefix(c, r.Pattern+" ")
@@ -311,22 +425,65 @@ var onceOnlyCmds = map[string]bool{
 	"nice": true, "setsid": true, "command": true, "builtin": true, "ssh": true, "sudo": true, "doas": true, "su": true,
 }
 
-// onceOnly reports whether a command may only be approved once: shells,
-// interpreters, destructive commands, wrappers that run another command,
-// VAR=value prefixes and git with global options (git -c runs config).
-func onceOnly(f []string) bool {
+// unquote drops the shell quoting of a word: \rm, "rm" and 'rm' all run rm.
+func unquote(w string) string {
+	w = strings.ReplaceAll(w, "$'", "'")
+	return strings.NewReplacer(`\`, "", `"`, "", "'", "").Replace(w)
+}
+
+// onceOnly reports whether a command in project dir may only be approved
+// once: shells, interpreters, destructive commands, wrappers that run
+// another command, VAR=value prefixes, a command name built from
+// variables, git with global options (git -c runs config) and git config,
+// output flags (git log --output=.git/hooks/x) and arguments that point
+// into .git, .claude or other files git and Claude Code run commands from.
+func onceOnly(f []string, dir string) bool {
 	if len(f) == 0 {
 		return true
 	}
-	if strings.Contains(f[0], "=") {
+	first := unquote(f[0])
+	if strings.ContainsAny(first, "=$`") {
 		return true
 	}
-	name := strings.TrimSuffix(strings.ToLower(filepath.Base(f[0])), ".exe")
+	name := strings.TrimSuffix(strings.ToLower(filepath.Base(first)), ".exe")
 	switch {
 	case onceOnlyCmds[name], strings.HasPrefix(name, "python"):
 		return true
-	case name == "git":
-		return len(f) > 1 && strings.HasPrefix(f[1], "-")
+	case name == "git" && len(f) > 1:
+		if a := unquote(f[1]); strings.HasPrefix(a, "-") || a == "config" {
+			return true
+		}
+	}
+	for _, a := range f[1:] {
+		a = unquote(a)
+		if a == "-o" || (strings.HasPrefix(a, "-o") && !strings.HasPrefix(a, "--")) || strings.HasPrefix(a, "--output") {
+			return true
+		}
+		if sensitiveWord(dir, a) {
+			return true
+		}
+	}
+	return false
+}
+
+// sensitiveWord reports whether a command argument, or the value after its
+// "=", names a sensitive project file (see sensitiveRel) by its text or
+// once symlinks in the project are followed.
+func sensitiveWord(dir, a string) bool {
+	vals := []string{a}
+	if i := strings.LastIndexByte(a, '='); i >= 0 {
+		vals = append(vals, a[i+1:])
+	}
+	for _, v := range vals {
+		if v == "" || strings.HasPrefix(v, "-") {
+			continue
+		}
+		if sensitiveRel(filepath.Clean(filepath.FromSlash(strings.TrimPrefix(v, "~")))) {
+			return true
+		}
+		if dir != "" && sensitiveWrite(dir, files.Abs(dir, v)) {
+			return true
+		}
 	}
 	return false
 }
@@ -355,7 +512,7 @@ func AlwaysRule(tool string, args map[string]any, dir string) (store.Rule, bool)
 		return store.Rule{}, false
 	}
 	f := strings.Fields(cmd)
-	if onceOnly(f) {
+	if onceOnly(f, dir) {
 		return store.Rule{}, false
 	}
 	pat := f[0]

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ArthurKrantsevich/tgsync/internal/files"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 func TestEvaluate(t *testing.T) {
@@ -301,6 +302,82 @@ func TestEvaluateBashReachingTgsyncFolder(t *testing.T) {
 	}
 }
 
+func TestEvaluateBashReachingTgsyncOtherSpellings(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell paths below are Unix ones")
+	}
+	t.Setenv("XDG_CONFIG_HOME", "/home/u/.config")
+	t.Setenv("APPDATA", "/home/u/.config")
+	for _, cmd := range []string{
+		"ls $HOME/.config",
+		`ls "$HOME/.config"`,
+		`sh -c "cat $HOME/.config/tg*/.env"`,
+		`bash -lc 'cat ~/.config/tg*/.env'`,
+		"sh <<EOF\ncat ~/.config/tg*/.env\nEOF",
+		"bash <<< 'cat ~/.config/tg*/.env'",
+		`eval "cat ~/.config/tg*/.env"`,
+		`python3 -c "print(open('/home/u/.config/tg' + 'sync/.env').read())"`,
+		"ls ~u/.config",
+		"ls ~root/.config",
+		"cd ~/.config && cat tg*/.env",
+		"cd ~/.config; ls tgsync",
+		"pushd ~/.config && ls tgsync",
+		"cd && ls .config/tgsync",
+		"cd ~ && ls .config",
+		"cd $HOME; ls .config",
+		"ls $XDG_CONFIG_HOME",
+		"ls $APPDATA",
+		"cat $PWD/../.config/tg*/.env",
+		"grep -r token ..",
+		"rg token ..",
+		"cd .. && grep -rn token .",
+		"ls /",
+		"du -sh ~/*",
+	} {
+		if got, reason := Evaluate(tgsyncInput(cmd)); got != Confirm {
+			t.Errorf("%q: got %v (%s), want confirm", cmd, got, reason)
+		}
+	}
+	for cmd, want := range map[string]Decision{
+		`git commit -m "fix: a / b"`:                         Ask,
+		`git commit -m "expand ~ in paths"`:                  Ask,
+		"cat > notes.md <<'EOF'\nsplit a / b and ~ too\nEOF": Ask,
+		"go build -o $PWD/bin/tgsync ./cmd/tgsync":           Ask,
+		"ls ..":                      Allow,
+		"cd .. && ls":                Ask,
+		"ls ../other":                Allow,
+		"cat ~/notes.txt":            Allow,
+		`echo "a b" | sh -c 'wc -l'`: Ask,
+	} {
+		if got, reason := Evaluate(tgsyncInput(cmd)); got != want {
+			t.Errorf("%q: got %v (%s), want %v", cmd, got, reason, want)
+		}
+	}
+}
+
+func TestEvaluateBashReachingTgsyncThroughProjectLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need extra rights on Windows")
+	}
+	home, proj, protected := tgsyncTree(t)
+	for _, cmd := range []string{"cat cfg/.env", "ls cfgparent", "grep -r x cfg", "cat ./cfg/data/*"} {
+		in := Input{Tool: "Bash", Args: map[string]any{"command": cmd}, ProjectDir: proj, Home: home, Protected: protected}
+		if got, reason := Evaluate(in); got != Confirm {
+			t.Errorf("%q: got %v (%s), want confirm", cmd, got, reason)
+		}
+	}
+}
+
+func TestParseFailureConfirms(t *testing.T) {
+	if !parseFailureConfirms(syntax.LangError{}) {
+		t.Error("a construct the parser does not support must need a button")
+	}
+	_, err := syntax.NewParser().Parse(strings.NewReader("cat )"), "")
+	if err == nil || parseFailureConfirms(err) {
+		t.Errorf("a syntax error bash rejects too needs no button: %v", err)
+	}
+}
+
 func TestSudoOffReasonWindows(t *testing.T) {
 	if !strings.Contains(sudoOffReason("windows"), "Windows") {
 		t.Fatal("the Windows deny reason must say sudo is unavailable on Windows")
@@ -320,5 +397,142 @@ func TestMentionsWindowsSpellings(t *testing.T) {
 	}
 	if mentionsOS("cat /c/Users/u/notes.txt", p, "windows", true) {
 		t.Error("another file must not match")
+	}
+}
+
+// tgsyncTree makes home/.config/tgsync with its files and a project next to
+// it, with links from the project to tgsync's folder and its parent.
+func tgsyncTree(t *testing.T) (home, proj string, protected []string) {
+	t.Helper()
+	root := t.TempDir()
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
+	home = filepath.Join(root, "home")
+	tg := filepath.Join(home, ".config", "tgsync")
+	proj = filepath.Join(home, "proj")
+	for _, d := range []string{filepath.Join(tg, "data"), proj} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	protected = []string{filepath.Join(tg, ".env"), filepath.Join(tg, "data", "tgsync.db")}
+	for _, p := range protected {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if runtime.GOOS != "windows" {
+		for link, to := range map[string]string{"cfg": tg, "cfgparent": filepath.Join(home, ".config"), "dot": filepath.Join(tg, ".env")} {
+			if err := os.Symlink(to, filepath.Join(proj, link)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return home, proj, protected
+}
+
+func TestEvaluateToolPathsFollowLinksAndTilde(t *testing.T) {
+	home, proj, protected := tgsyncTree(t)
+	eval := func(tool string, args map[string]any) Decision {
+		d, _ := Evaluate(Input{Tool: tool, Args: args, ProjectDir: proj, Home: home, Protected: protected})
+		return d
+	}
+	type call struct {
+		tool string
+		args map[string]any
+	}
+	deny := []call{
+		{"Grep", map[string]any{"pattern": ".", "path": "~/.config"}},
+		{"Grep", map[string]any{"pattern": ".", "path": "~"}},
+		{"Glob", map[string]any{"pattern": "*", "path": "~/.config/tgsync"}},
+		{"LS", map[string]any{"path": "~/.config/tgsync"}},
+		{"Read", map[string]any{"file_path": "~/.config/tgsync/.env"}},
+		{"Read", map[string]any{"file_path": "~/.config/tgsync"}},
+		{"Write", map[string]any{"file_path": "~/.config/tgsync/.env"}},
+		{"Glob", map[string]any{"pattern": filepath.Join(home, ".config", "tgsync", "*")}},
+		{"Glob", map[string]any{"pattern": "~/.config/tgs*/.env"}},
+		{"Glob", map[string]any{"pattern": "../.config/**"}},
+	}
+	if runtime.GOOS != "windows" {
+		deny = append(deny,
+			call{"Grep", map[string]any{"pattern": ".", "path": "cfg"}},
+			call{"Grep", map[string]any{"pattern": ".", "path": filepath.Join(proj, "cfg")}},
+			call{"Glob", map[string]any{"pattern": "*", "path": "cfgparent"}},
+			call{"LS", map[string]any{"path": "cfg"}},
+			call{"Read", map[string]any{"file_path": "cfg/.env"}},
+			call{"Read", map[string]any{"file_path": "dot"}},
+			call{"Edit", map[string]any{"file_path": "cfg/.env"}},
+			call{"MultiEdit", map[string]any{"file_path": "dot"}},
+			call{"NotebookEdit", map[string]any{"notebook_path": "cfg/data/tgsync.db"}},
+			call{"Glob", map[string]any{"pattern": "cfg/*"}},
+		)
+	}
+	for _, c := range deny {
+		if got := eval(c.tool, c.args); got != Deny {
+			t.Errorf("%s %v: got %v, want deny", c.tool, c.args, got)
+		}
+	}
+	for _, c := range []call{
+		{"Grep", map[string]any{"pattern": ".", "path": "src"}},
+		{"Read", map[string]any{"file_path": "~/notes.txt"}},
+		{"Glob", map[string]any{"pattern": "**/*.go"}},
+		{"LS", map[string]any{"path": "~/proj"}},
+	} {
+		if got := eval(c.tool, c.args); got != Allow {
+			t.Errorf("%s %v: got %v, want allow", c.tool, c.args, got)
+		}
+	}
+}
+
+// Saved rules must not cover commands that write where git or Claude Code
+// run commands from, or change git's configuration.
+func TestSavedRulesSkipSensitiveCommands(t *testing.T) {
+	proj := t.TempDir()
+	if r, err := filepath.EvalSymlinks(proj); err == nil {
+		proj = r
+	}
+	if err := os.MkdirAll(filepath.Join(proj, ".git", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links := runtime.GOOS != "windows"
+	if links {
+		if err := os.Symlink(filepath.Join(proj, ".git", "hooks"), filepath.Join(proj, "hooks")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rules := []store.Rule{{Tool: "Bash", Pattern: "git log"}, {Tool: "Bash", Pattern: "git config"}, {Tool: "Bash", Pattern: "cp -r"},
+		{Tool: "Bash", Pattern: "go build"}, {Tool: "Bash", Pattern: `\rm -rf`}, {Tool: "Bash", Pattern: `"rm" -rf`}, {Tool: "Bash", Pattern: "tee"}}
+	once := []string{
+		"git log -1 --format=%B --output=.git/hooks/pre-commit",
+		"git log -1 --output .git/hooks/pre-commit",
+		"git config filter.x.clean evil",
+		"git config core.fsmonitor evil",
+		"git config core.hooksPath /tmp",
+		"git config --get user.name",
+		"cp -r evil .git/hooks",
+		"cp -r evil ./.git/hooks/",
+		"cp -r evil sub/.claude",
+		"go build -o bin/x ./cmd/x",
+		"tee .envrc",
+		`\rm -rf build`,
+		`"rm" -rf build`,
+		`'rm' -rf build`,
+	}
+	if links {
+		once = append(once, "cp -r evil hooks")
+	}
+	for _, cmd := range once {
+		if got, _ := Evaluate(Input{Tool: "Bash", Args: map[string]any{"command": cmd}, ProjectDir: proj, Rules: rules}); got != Ask {
+			t.Errorf("%q: got %v, want ask", cmd, got)
+		}
+		if r, ok := AlwaysRule("Bash", map[string]any{"command": cmd}, proj); ok {
+			t.Errorf("%q: «Всегда» offered (%q)", cmd, r.Pattern)
+		}
+	}
+	for _, cmd := range []string{"git log --oneline", "cp -r a b", "go build ./..."} {
+		if got, _ := Evaluate(Input{Tool: "Bash", Args: map[string]any{"command": cmd}, ProjectDir: proj, Rules: rules}); got != Allow {
+			t.Errorf("%q: got %v, want allow", cmd, got)
+		}
 	}
 }

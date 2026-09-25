@@ -1,6 +1,7 @@
 // Package sudo lets the agent run sudo commands the user approved in
 // Telegram. On approval the command's sudo calls get a one-time token
-// (TGSYNC_SUDO_TOKEN=… sudo -A …). sudo runs this binary as SUDO_ASKPASS;
+// (SUDO_ASKPASS=<this binary> TGSYNC_SUDO_TOKEN=… sudo -A …). sudo runs
+// this binary as askpass;
 // it sends the token over a unix socket, and the node answers with the
 // password only for a valid token and only to a process started by sudo.
 // The password never enters the agent's environment or context.
@@ -40,6 +41,15 @@ const GrantTTL = 5 * time.Minute
 // TokenVar carries the one-time token from the approved sudo call to askpass.
 const TokenVar = "TGSYNC_SUDO_TOKEN"
 
+// LoopUses is how many password requests a sudo call inside a loop or a
+// function may make: it can run more than once, and its count is not known
+// before the command runs.
+const LoopUses = 5
+
+// askpassExe is the askpass program put into every approved sudo call: this
+// binary, the same one the node runs as.
+var askpassExe = os.Executable
+
 // NewToken returns a random one-time token for an approval.
 func NewToken() string {
 	b := make([]byte, 16)
@@ -62,21 +72,92 @@ func isSudoArg(w *syntax.Word) bool {
 	return lit == "sudo" || strings.HasPrefix(lit, "/")
 }
 
+// sudoCall is one sudo call; repeated means it sits in a loop or a
+// function body, so it may run more than once.
+type sudoCall struct {
+	*syntax.CallExpr
+	repeated bool
+}
+
 // sudoCalls parses cmd and returns the sudo calls in it (not the word
 // "sudo" inside strings or arguments).
-func sudoCalls(cmd string) ([]*syntax.CallExpr, error) {
+func sudoCalls(cmd string) (*syntax.File, []sudoCall, error) {
 	f, err := syntax.NewParser().Parse(strings.NewReader(cmd), "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var calls []*syntax.CallExpr
+	var loops [][2]uint
 	syntax.Walk(f, func(n syntax.Node) bool {
-		if ce, ok := n.(*syntax.CallExpr); ok && len(ce.Args) > 0 && isSudo(ce.Args[0]) {
-			calls = append(calls, ce)
+		switch n := n.(type) {
+		case *syntax.ForClause:
+			loops = append(loops, [2]uint{n.DoPos.Offset(), n.DonePos.Offset()})
+		case *syntax.WhileClause:
+			loops = append(loops, [2]uint{n.DoPos.Offset(), n.DonePos.Offset()})
+		case *syntax.FuncDecl:
+			loops = append(loops, [2]uint{n.Body.Pos().Offset(), n.Body.End().Offset()})
 		}
 		return true
 	})
-	return calls, nil
+	var calls []sudoCall
+	syntax.Walk(f, func(n syntax.Node) bool {
+		if ce, ok := n.(*syntax.CallExpr); ok && len(ce.Args) > 0 && isSudo(ce.Args[0]) {
+			at := ce.Pos().Offset()
+			rep := false
+			for _, l := range loops {
+				rep = rep || (at >= l[0] && at < l[1])
+			}
+			calls = append(calls, sudoCall{ce, rep})
+		}
+		return true
+	})
+	return f, calls, nil
+}
+
+// systemSudo lists where a system sudo lives; an absolute path elsewhere
+// may be a program of the agent's that passes the token on.
+var systemSudo = map[string]bool{"/usr/bin/sudo": true, "/bin/sudo": true, "/usr/sbin/sudo": true, "/sbin/sudo": true,
+	"/usr/local/bin/sudo": true, "/run/wrappers/bin/sudo": true}
+
+// pathAssignRe finds assignments to PATH, which choose what "sudo" runs.
+var pathAssignRe = regexp.MustCompile(`(^|[^\w$])PATH\+?=`)
+
+// errAskpass refuses commands that could choose the program sudo runs as
+// askpass, or the sudo it runs: that program would get the one-time token
+// and, from the node, the password.
+var errAskpass = errors.New("tgsync: в sudo-команде нельзя задавать SUDO_ASKPASS или PATH, " +
+	"объявлять функцию или alias с именем sudo и вызывать sudo не из системной папки (./sudo, /tmp/…/sudo): " +
+	"tgsync сам подставляет свою программу-askpass. Перепиши команду.")
+
+// overridesAskpass reports whether cmd could change what an approved sudo
+// call runs or which askpass it uses.
+func overridesAskpass(cmd string, f *syntax.File, calls []sudoCall) bool {
+	if strings.Contains(cmd, "SUDO_ASKPASS") || pathAssignRe.MatchString(cmd) {
+		return true
+	}
+	for _, c := range calls {
+		if lit := c.Args[0].Lit(); lit != "sudo" && !systemSudo[lit] {
+			return true
+		}
+	}
+	found := false
+	syntax.Walk(f, func(n syntax.Node) bool {
+		switch n := n.(type) {
+		case *syntax.FuncDecl:
+			if n.Name.Value == "sudo" || strings.HasSuffix(n.Name.Value, "/sudo") {
+				found = true
+			}
+		case *syntax.CallExpr:
+			if len(n.Args) > 1 && n.Args[0].Lit() == "alias" {
+				for _, a := range n.Args[1:] {
+					if t, ok := wordText(a); !ok || strings.HasPrefix(strings.TrimSpace(t), "sudo") {
+						found = true
+					}
+				}
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 var sudoRe = regexp.MustCompile(`(^|[\s;&|(\x60])(?:\S*/)?sudo(\s|$)`)
@@ -145,7 +226,7 @@ var blockingFlags = map[string]bool{"-n": true, "--non-interactive": true, "-S":
 
 // valueFlags are sudo short options that take a value, either the rest of
 // the word (-uroot) or the next word (-u root).
-const valueFlags = "ugpCDhrtTU"
+const valueFlags = "ugpCDhrRtTU"
 
 // shortFlags drops n and S from a cluster of short sudo flags (without the
 // dash). Letters after a value flag are its value and are kept as they are.
@@ -164,22 +245,45 @@ func shortFlags(cluster string) (kept string, takesNext bool) {
 	return b.String(), false
 }
 
-// RewriteCommand prefixes every sudo call with the one-time token and makes
-// it use askpass (-A), dropping flags that would bypass askpass. It returns
-// the rewritten command and the number of calls.
+// RewriteCommand prefixes every sudo call with tgsync's askpass program and
+// the one-time token and makes it use askpass (-A), dropping flags that
+// would bypass askpass. It returns the rewritten command and the number of
+// password requests to allow: one per call, LoopUses for a call in a loop
+// or a function. Commands that could swap the askpass program or the sudo
+// binary are refused.
 func RewriteCommand(cmd, token string) (string, int, error) {
-	calls, err := sudoCalls(cmd)
+	f, calls, err := sudoCalls(cmd)
 	if err != nil {
 		return "", 0, fmt.Errorf("не удалось разобрать команду: %v", err)
 	}
+	if overridesAskpass(cmd, f, calls) {
+		return "", 0, errAskpass
+	}
+	exe, err := askpassExe()
+	if err != nil {
+		return "", 0, fmt.Errorf("tgsync: не найден свой исполняемый файл для askpass: %v", err)
+	}
+	qexe, err := syntax.Quote(exe, syntax.LangBash)
+	if err != nil {
+		return "", 0, fmt.Errorf("tgsync: путь askpass не записать в команду: %v", err)
+	}
+	// After the user's own VAR=value words, right before sudo, so these win.
+	prefix := "SUDO_ASKPASS=" + qexe + " " + TokenVar + "=" + token + " "
 	type edit struct {
 		at, end int // replaces cmd[at:end]
 		text    string
 	}
 	var edits []edit
-	for _, ce := range calls {
+	uses := 0
+	for _, c := range calls {
+		ce := c.CallExpr
+		if c.repeated {
+			uses += LoopUses
+		} else {
+			uses++
+		}
 		w := ce.Args[0]
-		edits = append(edits, edit{int(w.Pos().Offset()), int(w.Pos().Offset()), TokenVar + "=" + token + " "})
+		edits = append(edits, edit{int(w.Pos().Offset()), int(w.Pos().Offset()), prefix})
 		hasA := false
 		for i := 1; i < len(ce.Args); i++ {
 			lit := ce.Args[i].Lit()
@@ -217,7 +321,7 @@ func RewriteCommand(cmd, token string) (string, int, error) {
 	for _, e := range edits {
 		out = out[:e.at] + e.text + out[e.end:]
 	}
-	return out, len(calls), nil
+	return out, uses, nil
 }
 
 // AskFunc asks the user of a session for the password (telegram mode).

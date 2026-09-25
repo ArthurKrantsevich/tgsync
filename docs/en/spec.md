@@ -435,10 +435,17 @@ delete them; they live in the `permission_rules` table.
 Flow when a sudo command is approved (by button or by the 🟢 mode):
 
 1. A random 128-bit one-time token is generated. Every sudo call in the
-   command is rewritten to `TGSYNC_SUDO_TOKEN=<token> sudo -A …`; `-n`,
-   `--non-interactive`, `-S`, `--stdin` (also inside short-flag clusters) are
-   removed. The rewritten command replaces the original input.
-2. A grant is registered: session topic, number of sudo calls, valid for
+   command is rewritten to
+   `SUDO_ASKPASS=<tgsync binary> TGSYNC_SUDO_TOKEN=<token> sudo -A …`
+   (after the call's own `VAR=value` words); `-n`, `--non-interactive`, `-S`,
+   `--stdin` (also inside short-flag clusters) are removed. The rewritten
+   command replaces the original input. Commands that mention `SUDO_ASKPASS`,
+   assign `PATH`, define a `sudo` function or alias, or call sudo by a path
+   other than `sudo` or a system one (`/usr/bin/sudo`, `/bin/sudo`,
+   `/usr/sbin/sudo`, `/sbin/sudo`, `/usr/local/bin/sudo`,
+   `/run/wrappers/bin/sudo`) are denied without a prompt.
+2. A grant is registered: session topic, number of password requests (one
+   per sudo call, 5 for a call inside a loop or a function body), valid for
    5 minutes.
 3. The agent's environment (set when the process starts) contains
    `SUDO_ASKPASS=<tgsync binary>`, `TGSYNC_ASKPASS=1`,
@@ -1026,6 +1033,14 @@ the node folder; run `tgsync check` before registering the service.
   topic is offered for deletion, including ones closed a minute ago.
 - **Peer check** exists only on Linux and macOS; elsewhere the one-time token
   and socket permissions are the only protection (sudo is off on Windows).
+- **The sudo token is visible in the process list** (it is in the command
+  line) while the approved command runs. It is single-use per approved call,
+  expires after 5 minutes or at the end of the turn, and the peer check
+  answers only a child of a setuid-root sudo.
+- **Reaching tgsync's folder from the shell** is detected by spelling, not
+  enforced: code the agent writes to a file and runs, paths built at run
+  time, and recursive commands in a project's parent other than the ones
+  listed (`grep -r`, `rg`, `find`, `tar`, …) are not seen.
 - **Telegram limits:** 20 MB downloads, 50 MB uploads, messages older than
   48 hours cannot be deleted by bots (the sweep forgets them).
 - **MCP servers needing OAuth** cannot be authorized from a bot session; the
