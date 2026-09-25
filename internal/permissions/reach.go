@@ -26,13 +26,14 @@ const reachReason = "команда может обращаться к папк�
 // program it writes and runs, it can still read these files. The check only
 // makes the obvious spellings need a tap.
 type reach struct {
-	project string
-	home    string   // the user's home for ~ and $HOME
-	dirs    []string // folders holding tgsync's files, as named and resolved
-	names   []string // base names of the top folders, e.g. tgsync
-	tails   []string // folder/name of each protected file, e.g. tgsync/.env
-	fold    bool
-	getenv  func(string) string
+	project  string
+	projects []string // the project as named and resolved
+	home     string   // the user's home for ~ and $HOME
+	dirs     []string // folders holding tgsync's files, as named and resolved
+	names    []string // base names of the top folders, e.g. tgsync
+	tails    []string // folder/name of each protected file, e.g. tgsync/.env
+	fold     bool
+	getenv   func(string) string
 
 	// Filled per command.
 	bases     []string // folders cd or pushd may move to
@@ -48,6 +49,10 @@ func reachesTgsync(in Input) bool {
 
 func newReach(project, home string, protected []string) *reach {
 	r := &reach{project: filepath.Clean(project), home: homeDir(home), fold: files.FoldCase, getenv: os.Getenv}
+	r.projects = []string{r.project}
+	if real, ok := realPath(r.project); ok && !files.SamePath(real, r.project) {
+		r.projects = append(r.projects, real)
+	}
 	for _, p := range protected {
 		if p == "" {
 			continue
@@ -245,7 +250,7 @@ func (r *reach) heredocs(st *syntax.Stmt, depth int) bool {
 func (r *reach) script(code string, shell bool, depth int) bool {
 	code = strings.ReplaceAll(code, wild, "*")
 	if shell && depth < 3 {
-		sub := &reach{project: r.project, home: r.home, dirs: r.dirs, names: r.names, tails: r.tails, fold: r.fold,
+		sub := &reach{project: r.project, projects: r.projects, home: r.home, dirs: r.dirs, names: r.names, tails: r.tails, fold: r.fold,
 			getenv: r.getenv, bases: r.bases, cdUnknown: r.cdUnknown, recursive: r.recursive}
 		if _, err := syntax.NewParser().Parse(strings.NewReader(code), ""); err == nil {
 			return sub.command(code, depth+1)
@@ -430,18 +435,35 @@ func (r *reach) path(p string, partial, relative bool) bool {
 	if real, ok := realPath(p); ok && !files.SamePath(real, p) {
 		cands = append(cands, real)
 	}
+	projects := r.projects
+	inAny := func(p string, bases []string) bool {
+		for _, b := range bases {
+			if within(b, p) {
+				return true
+			}
+		}
+		return false
+	}
+	aboveAny := func(p string) bool {
+		for _, b := range projects {
+			if within(p, b) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, c := range cands {
 		for _, d := range r.dirs {
 			// Paths in the project are its own business unless tgsync's
 			// folder is inside the project.
-			if within(r.project, c) && !within(r.project, d) {
+			if inAny(c, projects) && !inAny(d, projects) {
 				continue
 			}
 			if within(d, c) {
 				return true
 			}
 			if within(c, d) {
-				if relative && !partial && !r.recursive && within(c, r.project) {
+				if relative && !partial && !r.recursive && aboveAny(c) {
 					continue
 				}
 				return true
