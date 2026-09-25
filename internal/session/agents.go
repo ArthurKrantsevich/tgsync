@@ -40,6 +40,7 @@ type trackedAgent struct {
 	parent     string    // tool use id of the calling agent's Agent call; empty for the main agent
 	action     string    // last tool call of the agent, as a status line
 	ended      time.Time // when it finished
+	endN       int       // finish order: agents may end on the same clock tick (Windows)
 }
 
 // agentPanel is the message listing the agents started while it was open.
@@ -130,7 +131,7 @@ func (m *Manager) listing(p *agentPanel) ([]render.AgentEntry, []*trackedAgent, 
 		hidden.Running = len(running) - maxListed
 		running = running[:maxListed]
 	}
-	sort.SliceStable(finished, func(i, j int) bool { return finished[i].ended.After(finished[j].ended) })
+	sort.SliceStable(finished, func(i, j int) bool { return finished[i].endN > finished[j].endN })
 	if room := maxListed - len(running); len(finished) > room {
 		hidden.Done = len(finished) - room
 		finished = finished[:room]
@@ -311,7 +312,8 @@ func (m *Manager) onTask(ctx context.Context, s *sess, ev agent.Event) {
 			return
 		}
 		a.state, a.took = t.Status, now.Sub(a.started)
-		a.ended = now
+		m.endSeq++
+		a.ended, a.endN = now, m.endSeq
 		s.lastFinished = a.name
 		if t.Summary != "" {
 			a.summary = t.Summary
@@ -645,7 +647,8 @@ func (m *Manager) agentsGone(ctx context.Context, s *sess) {
 	if s.panel != nil && !s.closed {
 		for _, a := range s.panel.agents {
 			if a.state == "running" {
-				a.state, a.took, a.ended, changed = "stopped", now.Sub(a.started), now, true
+				m.endSeq++
+				a.state, a.took, a.ended, a.endN, changed = "stopped", now.Sub(a.started), now, m.endSeq, true
 				s.lastFinished = a.name
 			}
 		}

@@ -72,7 +72,7 @@ func startAgent(s *agent.FakeSession, parent, toolUse, task, name, desc string) 
 
 func TestAgentsTreeAndCard(t *testing.T) {
 	e, ctx := newEnv(t, 3), context.Background()
-	thread, _ := e.m.New(ctx, "demo", "/w/demo", "go")
+	thread, _ := e.m.New(ctx, "demo", osPath("/w/demo"), "go")
 	s := e.session(t, 0)
 	startAgent(s, "", "tu1", "t1", "Explore", "ищет sudo")
 	startAgent(s, "tu1", "tu2", "t2", "go-reviewer", "ревью")
@@ -88,7 +88,7 @@ func TestAgentsTreeAndCard(t *testing.T) {
 	}
 	e.card(t, thread, "Вызвал: Explore")
 	s.Emit(agent.Event{Kind: agent.EventToolUse, ParentToolUseID: "tu2", ToolUseID: "tu3", ToolName: "Read",
-		ToolInput: map[string]any{"file_path": "/w/demo/a.go"}})
+		ToolInput: map[string]any{"file_path": osPath("/w/demo/a.go")}})
 	c := e.card(t, thread, "Сейчас: 📖 Read a.go")
 	if c.ID != p.ID {
 		t.Fatal("the card replaces the panel in the same message")
@@ -380,6 +380,9 @@ func TestPanelCollapsesToTwelve(t *testing.T) {
 
 func TestAgentsListOrphanBecomesRoot(t *testing.T) {
 	e, ctx := newEnv(t, 3), context.Background()
+	// A frozen clock: on Windows agents often end on the same clock tick,
+	// and the order they finished in must still decide who collapses.
+	e.m.d.Now = (&fakeClock{now: time.Now()}).Now
 	thread, _ := e.m.New(ctx, "demo", "/w/demo", "go")
 	s := e.session(t, 0)
 	startAgent(s, "", "tu0", "t0", "Caller", "starts many")
@@ -589,13 +592,13 @@ func TestListViewNotReedited(t *testing.T) {
 	e, ctx := newEnv(t, 3), context.Background()
 	api := &countingAPI{Fake: e.api, edits: map[int]int{}}
 	e.m.d.API = api
-	thread, _ := e.m.New(ctx, "demo", "/w/demo", "go")
+	thread, _ := e.m.New(ctx, "demo", osPath("/w/demo"), "go")
 	s := e.session(t, 0)
 	startAgent(s, "", "tu1", "t1", "Explore", "one")
 	startAgent(s, "", "tu2", "t2", "Plan", "two")
 	p := e.panel(t, thread, "<b>Plan</b>")
 	before := api.count(p.ID)
-	s.Emit(agent.Event{Kind: agent.EventToolUse, ParentToolUseID: "tu1", ToolUseID: "x1", ToolName: "Read", ToolInput: map[string]any{"file_path": "/w/demo/a"}})
+	s.Emit(agent.Event{Kind: agent.EventToolUse, ParentToolUseID: "tu1", ToolUseID: "x1", ToolName: "Read", ToolInput: map[string]any{"file_path": osPath("/w/demo/a")}})
 	s.Emit(agent.Event{Kind: agent.EventTaskProgress, Task: &agent.TaskInfo{ID: "t1", ToolUses: 3}})
 	s.Emit(taskStarted("t9", "", "local_bash", "sync")) // barrier: ignored task event
 	testutil.Eventually(t, "events handled", func() bool {
@@ -614,8 +617,8 @@ func TestListViewNotReedited(t *testing.T) {
 	if api.count(p.ID) != opened+1 {
 		t.Fatal("an open card of a running agent is refreshed")
 	}
-	s.Emit(agent.Event{Kind: agent.EventToolUse, ParentToolUseID: "tu2", ToolUseID: "x2", ToolName: "Read", ToolInput: map[string]any{"file_path": "/w/demo/b"}})
-	s.Emit(agent.Event{Kind: agent.EventToolUse, ParentToolUseID: "tu1", ToolUseID: "x3", ToolName: "Read", ToolInput: map[string]any{"file_path": "/w/demo/c"}})
+	s.Emit(agent.Event{Kind: agent.EventToolUse, ParentToolUseID: "tu2", ToolUseID: "x2", ToolName: "Read", ToolInput: map[string]any{"file_path": osPath("/w/demo/b")}})
+	s.Emit(agent.Event{Kind: agent.EventToolUse, ParentToolUseID: "tu1", ToolUseID: "x3", ToolName: "Read", ToolInput: map[string]any{"file_path": osPath("/w/demo/c")}})
 	e.card(t, thread, "Сейчас: 📖 Read c")
 	if got := api.count(p.ID); got != opened+2 {
 		t.Fatalf("only the carded agent's action edits the card: %d edits", got-opened)
