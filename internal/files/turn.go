@@ -60,9 +60,16 @@ func Snapshot(ctx context.Context, dir string) (string, error) {
 	tmp.Close()
 	defer os.Remove(idx)
 	// The copy keeps git's stat cache: unchanged files are not hashed again.
-	if data, err := os.ReadFile(strings.TrimSpace(string(out))); err == nil {
+	orig := strings.TrimSpace(string(out))
+	if data, err := os.ReadFile(orig); err == nil {
 		if err := os.WriteFile(idx, data, 0o600); err != nil {
 			return "", err
+		}
+		// Git re-reads a file whose stat matches its entry only when the
+		// entry is not older than the index ("racy git"). The copy keeps the
+		// original's mtime, or a same-size edit in the same second is missed.
+		if st, err := os.Stat(orig); err == nil {
+			_ = os.Chtimes(idx, st.ModTime(), st.ModTime())
 		}
 	} else {
 		os.Remove(idx) // git rejects an empty index file; a missing one is fine
