@@ -155,6 +155,9 @@ func TestGrantExpires(t *testing.T) {
 }
 
 func TestPeerMustBeSudo(t *testing.T) {
+	if !peerCheckAvailable {
+		t.Skip("the askpass caller check is not available on this OS")
+	}
 	s := NewServer(shortSock(t), ModeEnv, "pw", nil)
 	sock := serve(t, s)
 	tok := NewToken()
