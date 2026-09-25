@@ -60,6 +60,15 @@ func sudoOffReason(goos string) string {
 const sudoWrappedReason = "tgsync: sudo поддерживается только прямым вызовом (sudo команда …), " +
 	"не через env, xargs, find -exec, sh -c и подобные обёртки. Перепиши команду."
 
+// sudoRefusal is the deny message for a sudo command sudo.RewriteCommand
+// refused (err) or found no direct sudo call in.
+func sudoRefusal(err error) string {
+	if err != nil && strings.HasPrefix(err.Error(), "tgsync:") {
+		return err.Error()
+	}
+	return sudoWrappedReason
+}
+
 // Evaluate applies the automatic rules of docs/en/spec.md §5.3. Commands with
 // sudo are denied here; the broker turns that into an approval prompt when
 // SUDO_MODE is on.

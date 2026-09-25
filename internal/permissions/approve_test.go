@@ -49,7 +49,7 @@ func TestApproveAllGrantsSudo(t *testing.T) {
 	fs.mu.Lock()
 	uses, tok := fs.grants[thread], fs.tokens[thread]
 	fs.mu.Unlock()
-	if !d.Allow || tok == "" || uses != 1 || d.UpdatedInput["command"] != "TGSYNC_SUDO_TOKEN="+tok+" sudo -A apt update" {
+	if !d.Allow || tok == "" || uses != 1 || d.UpdatedInput["command"] != askpassPrefix(t, tok)+"sudo -A apt update" {
 		t.Fatalf("decision: %+v uses=%d", d, uses)
 	}
 }

@@ -2,6 +2,7 @@ package permissions
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
 	"github.com/ArthurKrantsevich/tgsync/internal/testutil"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 const thread = 50
@@ -371,7 +373,8 @@ func TestSudoApproval(t *testing.T) {
 	fs.mu.Lock()
 	uses, tok := fs.grants[thread], fs.tokens[thread]
 	fs.mu.Unlock()
-	want := "TGSYNC_SUDO_TOKEN=" + tok + " sudo -A apt update && TGSYNC_SUDO_TOKEN=" + tok + " sudo -A apt install -y htop"
+	pre := askpassPrefix(t, tok)
+	want := pre + "sudo -A apt update && " + pre + "sudo -A apt install -y htop"
 	if !d.Allow || tok == "" || d.UpdatedInput["command"] != want {
 		t.Fatalf("decision: %+v (token %q)", d, tok)
 	}
@@ -403,6 +406,32 @@ func TestWrappedSudoRefusedWithoutPrompt(t *testing.T) {
 	d := decision(t, bash(can, "env sudo id"))
 	if d.Allow || !strings.Contains(d.Message, "прямым вызовом") || len(f.api.Messages(thread)) != 0 {
 		t.Fatalf("decision: %+v, messages: %d", d, len(f.api.Messages(thread)))
+	}
+}
+
+// askpassPrefix is what the broker puts before each approved sudo call.
+func askpassPrefix(t *testing.T, tok string) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := syntax.Quote(exe, syntax.LangBash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "SUDO_ASKPASS=" + q + " TGSYNC_SUDO_TOKEN=" + tok + " "
+}
+
+func TestSudoWithOwnAskpassRefusedWithoutPrompt(t *testing.T) {
+	f := newFixture(t)
+	f.b.SetSudo(&fakeSudo{grants: map[int]int{}})
+	can := f.b.CanUseTool(SessionInfo{ThreadID: thread, Project: "demo", ProjectDir: osPath("/w/demo")})
+	for _, cmd := range []string{"SUDO_ASKPASS=./x sudo apt update", "export SUDO_ASKPASS=./x; sudo id", "./sudo id"} {
+		d := decision(t, bash(can, cmd))
+		if d.Allow || !strings.Contains(d.Message, "SUDO_ASKPASS") || len(f.api.Messages(thread)) != 0 {
+			t.Fatalf("%q: decision: %+v, messages: %d", cmd, d, len(f.api.Messages(thread)))
+		}
 	}
 }
 

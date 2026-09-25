@@ -91,7 +91,7 @@ func (b *Broker) grantSudo(thread int, input map[string]any) (agent.PermissionDe
 	token := sudo.NewToken()
 	rewritten, uses, err := sudo.RewriteCommand(cmd, token)
 	if err != nil || uses == 0 {
-		return deny(sudoWrappedReason), false
+		return deny(sudoRefusal(err)), false
 	}
 	in := make(map[string]any, len(input))
 	for k, v := range input {

@@ -120,7 +120,7 @@ func (b *Broker) CanUseTool(si SessionInfo) agent.CanUseToolFunc {
 			// Refuse before asking what could not run after approval.
 			cmd, _ := req.Input["command"].(string)
 			if _, n, err := sudo.RewriteCommand(cmd, "check"); err != nil || n == 0 {
-				return deny(sudoWrappedReason)
+				return deny(sudoRefusal(err))
 			}
 		}
 		if mode := b.ApproveMode(ctx); !confirm && (mode == ApproveAll || (mode == ApproveNoSudo && !isSudo)) {
