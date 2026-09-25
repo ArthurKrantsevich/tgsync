@@ -65,6 +65,39 @@ func TestCleanupConfirm(t *testing.T) {
 	}
 }
 
+// The confirmation may be gone by the time 🗑 is handled (swept, or deleted
+// by the user): the topics are deleted all the same, so that is no error
+// and the card still shows the new count.
+func TestCleanupConfirmMessageGone(t *testing.T) {
+	g, api, _ := setup(t)
+	ctx := context.Background()
+	old := closedSession(t, g, "old", 10*24*time.Hour)
+	if err := g.EnsureCard(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Ask(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ask := lastControl(g, api)
+	if err := api.DeleteMessage(ctx, ask.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := len(api.Messages(g.Topics.Control()))
+	g.lastEdit = time.Time{} // let RefreshCard edit at once
+	if err := g.Confirm(ctx, ask.ID); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if api.Topic(old).ID != 0 {
+		t.Fatal("topic not deleted")
+	}
+	if n := len(api.Messages(g.Topics.Control())); n != before {
+		t.Fatalf("messages %d, want %d", n, before)
+	}
+	if card := api.Messages(g.Topics.Control())[0]; !strings.Contains(card.HTML, "закрытых: 0") {
+		t.Fatalf("card not refreshed: %s", card.HTML)
+	}
+}
+
 func TestCleanupNothing(t *testing.T) {
 	g, _, _ := setup(t)
 	if toast, _ := g.Ask(context.Background()); toast != "Убирать нечего" {

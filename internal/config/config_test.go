@@ -86,7 +86,9 @@ func TestLoadErrors(t *testing.T) {
 		"relative root":  {"PROJECTS_ROOT", "Projects", "absolute path"},
 		"zero parallel":  {"MAX_PARALLEL_SESSIONS", "0", "positive integer"},
 		"bad sudo mode":  {"SUDO_MODE", "yes", "SUDO_MODE"},
-		"bad duration":   {"STALL_WARN", "soon", "STALL_WARN"},
+		"bad duration":   {"STALL_WARN", "soon", `STALL_WARN must be a duration like 30m or 2h, got "soon"`},
+		"no unit":        {"IDLE_TIMEOUT", "120", `IDLE_TIMEOUT must be a duration like 30m or 2h, got "120"`},
+		"negative":       {"REMIND_EVERY", "-1h", `REMIND_EVERY must be a duration like 30m or 2h, got "-1h"`},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

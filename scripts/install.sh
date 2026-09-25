@@ -46,7 +46,7 @@ MAIN=$(service_pid)
 for pid in $(pgrep -u "$(id -un)" -x tgsync 2>/dev/null || true); do
 	if [ "$pid" != "$MAIN" ]; then
 		echo "! Запущен другой процесс tgsync (pid $pid), например ./bin/tgsync run в терминале."
-		echo "  Останови его и запусти make install ещё раз."
+		echo "  Останови его и запусти установку ещё раз (make install или sh scripts/install.sh)."
 		exit 1
 	fi
 done
@@ -73,7 +73,7 @@ if [ ! -f "$CONF/.env" ]; then
 	else
 		cp "$REPO/.env.example" "$CONF/.env"
 		chmod 600 "$CONF/.env"
-		echo "Заполни $CONF/.env и запусти make install ещё раз."
+		echo "Заполни $CONF/.env и запусти установку ещё раз (make install или sh scripts/install.sh)."
 		exit 1
 	fi
 fi
@@ -87,7 +87,7 @@ fi
 
 echo "→ проверка установки"
 if ! (cd "$CONF" && TGSYNC_HOME="$CONF" "$BIN" check); then
-	echo "Исправь ошибки выше и запусти make install ещё раз."
+	echo "Исправь ошибки выше и запусти установку ещё раз (make install или sh scripts/install.sh)."
 	exit 1
 fi
 

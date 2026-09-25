@@ -32,13 +32,13 @@ Messages from tgsync are in Russian; the quoted strings below are what you will 
 | `ALLOWED_USER_IDS: invalid user id "…"` | Not a positive number (e.g. `@username`) | Use numeric ids from @userinfobot, comma separated. |
 | `PROJECTS_ROOT must be an absolute path` | `~/projects` or a relative path | Write the full path: `/home/user/projects`. `~` is not expanded. |
 | `MAX_PARALLEL_SESSIONS must be a positive integer` | `0`, negative, or text | Use `1` or more. |
-| `IDLE_TIMEOUT: нужна длительность вроде 30m или 2h, получено "…"` ("need a duration like 30m or 2h") — also for `STALL_WARN`, `REMIND_EVERY`, `MAX_TURN_DURATION`, `STT_TIMEOUT` | Number without a unit (`120`), or negative | Add a unit: `120m`, `2h`. `0` alone disables. |
+| `IDLE_TIMEOUT must be a duration like 30m or 2h, got "…"` — also for `STALL_WARN`, `REMIND_EVERY`, `MAX_TURN_DURATION`, `STT_TIMEOUT` | Number without a unit (`120`), or negative | Add a unit: `120m`, `2h`. `0` alone disables. |
 | `SUDO_MODE must be off, env or telegram` | Typo | Use one of the three. |
 | `SUDO_MODE=env requires SUDO_PASSWORD` | Empty password in `env` mode | Set `SUDO_PASSWORD`, or use another mode. |
 | `SHOW_HOOK_OUTPUT must be true or false` | Other value | `true`/`false`. |
 | `STT_URL must be an http(s) URL like http://127.0.0.1:8000` | Missing scheme (`127.0.0.1:8000`) | Add `http://`. |
 | `STT_MAX_SECONDS must be a positive integer` | `0`, negative, text | Use a positive number of seconds. |
-| `TGSYNC_HOME=…: папка не существует` ("folder does not exist") | `TGSYNC_HOME` points to a missing folder | Create it or fix the path. |
+| `TGSYNC_HOME=…: directory does not exist` | `TGSYNC_HOME` points to a missing folder | Create it or fix the path. |
 | `.env: …` | Syntax error in `.env` (e.g. unbalanced quotes) | Keep lines as `NAME=value`, no quotes needed. |
 | `✗ профили — профиль "…" не найден в profiles.yaml` ("profile not found") | `DEFAULT_PROFILE` or `projects.*.profile` names a missing profile | Define it in `profiles.yaml` or use `full`. |
 | `✗ профили — profiles.yaml: yaml: …` | YAML syntax error | Fix indentation; use spaces, not tabs. |

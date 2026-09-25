@@ -283,12 +283,17 @@ func run() error {
 		}()
 	}
 	exe, _ := os.Executable()
-	tracker := limits.New(rapi, st, tp.Control)
+	grp := &group.Group{API: rapi, Store: st, Topics: tp, Avatar: brand.Avatar,
+		Description: brand.GroupDescription, Started: time.Now()}
+	// Everything that may post to the control topic (limit notices, /usage)
+	// goes through the tracked API, so the hourly sweep removes it.
+	ctrl := grp.ControlAPI(rapi)
+	tracker := limits.New(ctrl, st, tp.Control)
 	if err := tracker.Load(ctx); err != nil {
 		slog.Warn("load rate limits", "err", err)
 	}
 	mgr := session.NewManager(session.Deps{
-		API: rapi, Store: st, Topics: tp, Broker: broker, Runner: agent.SDKRunner{}, Limits: tracker,
+		API: ctrl, Store: st, Topics: tp, Broker: broker, Runner: agent.SDKRunner{}, Limits: tracker,
 		MaxParallel: cfg.MaxParallel, CLIPath: cfg.ClaudeCLIPath,
 		SettingSources: []string{"user", "project", "local"},
 		Protected:      []string{envPath, dbPath, dbPath + "-wal", dbPath + "-shm"},
@@ -310,15 +315,14 @@ func run() error {
 	}
 	defer mgr.Shutdown()
 
-	grp := &group.Group{API: rapi, Store: st, Topics: tp, Avatar: brand.Avatar,
-		Description: brand.GroupDescription, Forget: mgr.TopicRemoved, Started: time.Now()}
+	grp.Forget = mgr.TopicRemoved
 	grp.Setup(ctx) // loads topic icons before any new session is created
 	if err := grp.EnsureCard(ctx); err != nil {
 		slog.Warn("control card", "err", err)
 	}
 
 	rt = &router.Router{
-		Allowed: cfg.IsAllowed, API: grp.ControlAPI(rapi), ChatID: cfg.GroupChatID, Topics: tp,
+		Allowed: cfg.IsAllowed, API: ctrl, ChatID: cfg.GroupChatID, Topics: tp,
 		Projects: projects.Registry{Root: cfg.ProjectsRoot}, Sessions: mgr, Broker: broker,
 		ClaudeHome: claudeHome(), ProfileNames: profileFile.Names, Group: grp,
 	}

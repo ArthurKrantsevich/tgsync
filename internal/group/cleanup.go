@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -80,7 +81,10 @@ func (g *Group) Confirm(ctx context.Context, msgID int) error {
 	if failed > 0 {
 		text = fmt.Sprintf("🧹 Удалено %d из %d. Ошибки:\n%s", done, len(rows), strings.Join(fails, "\n"))
 	}
-	if err := g.API.EditMessage(ctx, msgID, text, nil); err != nil {
+	// A confirmation that is gone (swept, deleted) takes no result; the
+	// topics are deleted all the same, so the card is refreshed anyway.
+	if err := g.API.EditMessage(ctx, msgID, text, nil); err != nil &&
+		!errors.Is(err, telegram.ErrMessageGone) && !errors.Is(err, telegram.ErrTopicGone) {
 		return err
 	}
 	return g.RefreshCard(ctx)
