@@ -9,6 +9,7 @@ import (
 
 	"github.com/ArthurKrantsevich/tgsync/internal/files"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 func TestEvaluate(t *testing.T) {
@@ -298,6 +299,82 @@ func TestEvaluateBashReachingTgsyncFolder(t *testing.T) {
 		if got, reason := Evaluate(tgsyncInput(cmd)); got != want {
 			t.Errorf("%q: got %v (%s), want %v", cmd, got, reason, want)
 		}
+	}
+}
+
+func TestEvaluateBashReachingTgsyncOtherSpellings(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell paths below are Unix ones")
+	}
+	t.Setenv("XDG_CONFIG_HOME", "/home/u/.config")
+	t.Setenv("APPDATA", "/home/u/.config")
+	for _, cmd := range []string{
+		"ls $HOME/.config",
+		`ls "$HOME/.config"`,
+		`sh -c "cat $HOME/.config/tg*/.env"`,
+		`bash -lc 'cat ~/.config/tg*/.env'`,
+		"sh <<EOF\ncat ~/.config/tg*/.env\nEOF",
+		"bash <<< 'cat ~/.config/tg*/.env'",
+		`eval "cat ~/.config/tg*/.env"`,
+		`python3 -c "print(open('/home/u/.config/tg' + 'sync/.env').read())"`,
+		"ls ~u/.config",
+		"ls ~root/.config",
+		"cd ~/.config && cat tg*/.env",
+		"cd ~/.config; ls tgsync",
+		"pushd ~/.config && ls tgsync",
+		"cd && ls .config/tgsync",
+		"cd ~ && ls .config",
+		"cd $HOME; ls .config",
+		"ls $XDG_CONFIG_HOME",
+		"ls $APPDATA",
+		"cat $PWD/../.config/tg*/.env",
+		"grep -r token ..",
+		"rg token ..",
+		"cd .. && grep -rn token .",
+		"ls /",
+		"du -sh ~/*",
+	} {
+		if got, reason := Evaluate(tgsyncInput(cmd)); got != Confirm {
+			t.Errorf("%q: got %v (%s), want confirm", cmd, got, reason)
+		}
+	}
+	for cmd, want := range map[string]Decision{
+		`git commit -m "fix: a / b"`:                         Ask,
+		`git commit -m "expand ~ in paths"`:                  Ask,
+		"cat > notes.md <<'EOF'\nsplit a / b and ~ too\nEOF": Ask,
+		"go build -o $PWD/bin/tgsync ./cmd/tgsync":           Ask,
+		"ls ..":                      Allow,
+		"cd .. && ls":                Ask,
+		"ls ../other":                Allow,
+		"cat ~/notes.txt":            Allow,
+		`echo "a b" | sh -c 'wc -l'`: Ask,
+	} {
+		if got, reason := Evaluate(tgsyncInput(cmd)); got != want {
+			t.Errorf("%q: got %v (%s), want %v", cmd, got, reason, want)
+		}
+	}
+}
+
+func TestEvaluateBashReachingTgsyncThroughProjectLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need extra rights on Windows")
+	}
+	home, proj, protected := tgsyncTree(t)
+	for _, cmd := range []string{"cat cfg/.env", "ls cfgparent", "grep -r x cfg", "cat ./cfg/data/*"} {
+		in := Input{Tool: "Bash", Args: map[string]any{"command": cmd}, ProjectDir: proj, Home: home, Protected: protected}
+		if got, reason := Evaluate(in); got != Confirm {
+			t.Errorf("%q: got %v (%s), want confirm", cmd, got, reason)
+		}
+	}
+}
+
+func TestParseFailureConfirms(t *testing.T) {
+	if !parseFailureConfirms(syntax.LangError{}) {
+		t.Error("a construct the parser does not support must need a button")
+	}
+	_, err := syntax.NewParser().Parse(strings.NewReader("cat )"), "")
+	if err == nil || parseFailureConfirms(err) {
+		t.Errorf("a syntax error bash rejects too needs no button: %v", err)
 	}
 }
 
