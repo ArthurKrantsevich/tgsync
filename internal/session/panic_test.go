@@ -186,6 +186,65 @@ func TestPanicInSendFileToolIsAnError(t *testing.T) {
 	}
 }
 
+// A panic mid-turn whose interrupt fails used to end the turn while claude
+// was still working: the next message went to the busy process, and its old
+// result ended the new turn early. The process is closed instead, and the
+// next turn starts a fresh one that resumes the session.
+func TestPanicWithFailedInterruptRestartsProcess(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	e.m.d.Limits = panicLimits{}
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	s.SetInterruptErr(errors.New("control channel closed"))
+	_ = e.m.Message(ctx, thread, "queued")
+	e.hasMessage(t, thread, "В очереди")
+	s.Emit(agent.Event{Kind: agent.EventRateLimit, Limit: &agent.RateLimit{Window: "five_hour", Status: "allowed"}})
+	e.hasMessage(t, thread, "Внутренняя ошибка tgsync")
+	testutil.Eventually(t, "queued turn started", func() bool {
+		if len(s.Sent()) > 1 {
+			return true
+		}
+		ss := e.ag.Sessions()
+		return len(ss) > 1 && len(ss[1].Sent()) == 1
+	})
+	if sent := s.Sent(); len(sent) != 1 {
+		t.Fatalf("the busy process got the queued message: %v", sent)
+	}
+	if !s.Closed() {
+		t.Fatal("the busy process was left running")
+	}
+	next := e.session(t, 1)
+	next.Emit(result())
+	e.sessionState(t, thread, store.StateIdle)
+}
+
+// A panic in notifyTimers after tick claimed a turn as overtime used to
+// leave overtime set: MAX_TURN_DURATION was never enforced again.
+func TestPanicInTimerNoticesKeepsMaxTurn(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	p := withPanicAPI(e)
+	c := withClock(e)
+	e.m.d.StallWarn = time.Minute
+	e.m.d.MaxTurn = time.Hour
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	e.sessionState(t, thread, store.StateRunning)
+	p.arm("Нет активности") // the stall warning goes out before the interrupt
+	c.add(61 * time.Minute)
+	e.m.tick(ctx)
+	testutil.Eventually(t, "stall warning panicked", func() bool {
+		e.m.mu.Lock()
+		defer e.m.mu.Unlock()
+		return e.m.sessions[thread].warned
+	})
+	time.Sleep(50 * time.Millisecond)
+	p.arm("")
+	c.add(2 * time.Minute)
+	e.m.tick(ctx)
+	testutil.Eventually(t, "turn interrupted", func() bool { return s.Interrupts() == 1 })
+	e.hasMessage(t, thread, "MAX_TURN_DURATION")
+}
+
 // docPanicAPI panics on every document upload.
 type docPanicAPI struct{ *panicAPI }
 

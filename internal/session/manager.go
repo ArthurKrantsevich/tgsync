@@ -1535,9 +1535,17 @@ type stall struct {
 }
 
 func (m *Manager) notifyTimers(ctx context.Context, now time.Time, stalled []stall, overtime []*sess) {
+	done := 0 // overtime[done] is the turn being handled; earlier ones are done
 	defer func() {
 		if r := recover(); r != nil {
 			m.crashed("notifyTimers", nil, r)
+			// tick claimed these turns; unclaimed, it tries again once
+			// retryAt has passed, or MAX_TURN_DURATION stays off for them.
+			m.mu.Lock()
+			for _, s := range overtime[done:] {
+				s.overtime = false
+			}
+			m.mu.Unlock()
 		}
 	}()
 	for _, st := range stalled {
@@ -1548,7 +1556,8 @@ func (m *Manager) notifyTimers(ctx context.Context, now time.Time, stalled []sta
 			m.telegramFailed(st.s, "stall warning", err)
 		}
 	}
-	for _, s := range overtime {
+	for i, s := range overtime {
+		done = i
 		m.mu.Lock()
 		a := s.agent
 		m.mu.Unlock()

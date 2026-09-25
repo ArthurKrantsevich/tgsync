@@ -59,7 +59,11 @@ func (m *Manager) safely(where string, s *sess, f func()) (recovered bool) {
 // eventPanicked handles a panic while handling ev. The events keep being
 // read. A turn still running is interrupted: the CLI then ends it with a
 // result as usual. A result that panicked cannot come again, so the turn it
-// ended is closed here, and the queue moves on.
+// ended is closed here, and the queue moves on. When the interrupt fails,
+// claude may still be working: ending the turn would hand the next message
+// to the busy process, whose old result would end the new turn early. The
+// process is closed instead; readEvents then sees its events end and fails
+// the turn, and the next one starts a fresh process resuming the session.
 func (m *Manager) eventPanicked(s *sess, ev agent.Event) {
 	ctx := context.Background()
 	m.mu.Lock()
@@ -74,7 +78,9 @@ func (m *Manager) eventPanicked(s *sess, ev agent.Event) {
 		m.failTurn(ctx, s)
 	case inTurn && a != nil:
 		if err := m.interrupt(ctx, s, a); err != nil {
-			m.failTurn(ctx, s)
+			slog.Warn("interrupt after panic failed, closing the process", "thread", s.row.ThreadID, "err", err)
+			_ = a.Close()
+			return
 		}
 	}
 	m.schedule(ctx)
