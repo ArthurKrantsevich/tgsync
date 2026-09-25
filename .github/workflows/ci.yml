@@ -49,3 +49,13 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$null, [ref]$e) | Out-Null
             if ($e) { $e; exit 1 }
           }
+      # The scripts run under Windows PowerShell 5.1 on users' machines.
+      - name: powershell scripts (5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          foreach ($f in 'scripts/install.ps1', 'scripts/uninstall.ps1') {
+            $e = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$null, [ref]$e) | Out-Null
+            if ($e) { $e; exit 1 }
+          }

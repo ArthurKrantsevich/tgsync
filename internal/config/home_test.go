@@ -44,6 +44,9 @@ func TestFindHome(t *testing.T) {
 			if (err != nil) != c.wantErr || got != c.want {
 				t.Fatalf("got %q, %v; want %q, err=%v", got, err, c.want, c.wantErr)
 			}
+			if err != nil && err.Error() != "TGSYNC_HOME="+c.env+": directory does not exist" {
+				t.Fatalf("error text: %v", err)
+			}
 		})
 	}
 }
