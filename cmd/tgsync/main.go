@@ -261,8 +261,6 @@ func run() error {
 		return fmt.Errorf("control topic: %w", err)
 	}
 
-	envPath, _ := filepath.Abs(".env")
-	dbPath, _ := filepath.Abs(cfg.DBPath)
 	profileFile, err := profiles.Load("profiles.yaml")
 	if err != nil {
 		return err
@@ -296,7 +294,7 @@ func run() error {
 		API: ctrl, Store: st, Topics: tp, Broker: broker, Runner: agent.SDKRunner{}, Limits: tracker,
 		MaxParallel: cfg.MaxParallel, CLIPath: cfg.ClaudeCLIPath,
 		SettingSources: []string{"user", "project", "local"},
-		Protected:      []string{envPath, dbPath, dbPath + "-wal", dbPath + "-shm"},
+		Protected:      protectedPaths(home, cfg.DBPath, sockPath),
 		EditInterval:   3 * time.Second,
 		AutoSend:       cfg.AutoSendGlobs,
 		IdleTimeout:    cfg.IdleTimeout,
@@ -338,6 +336,22 @@ func run() error {
 	slog.Info("tgsync running", "node", cfg.NodeName, "control_topic", control)
 	api.Run(ctx)
 	return nil
+}
+
+// protectedPaths lists tgsync's own files the agent must never touch: the
+// secrets in .env, the database and its WAL files, profiles.yaml (its env
+// may hold keys, and it decides what the agent may do) and the sudo askpass
+// socket. dir is the node folder (the working directory), db the DB_PATH
+// setting, sock the askpass socket.
+func protectedPaths(dir, db, sock string) []string {
+	abs := func(p string) string {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		return filepath.Clean(p)
+	}
+	dbPath := abs(db)
+	return []string{abs(".env"), dbPath, dbPath + "-wal", dbPath + "-shm", abs("profiles.yaml"), abs(sock)}
 }
 
 // claudeHome is where Claude Code keeps its settings and transcripts.

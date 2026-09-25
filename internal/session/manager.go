@@ -121,6 +121,7 @@ type sess struct {
 	interrupted  bool                 // the node interrupted this turn (/stop, «send now», time limit)
 	snapWarned   bool                 // the user was told that git snapshots fail
 	retryAt      time.Time            // MAX_TURN_DURATION: next interrupt attempt after a failed one
+	probedAt     time.Time            // last topic probe after an edit found no message
 	panel        *agentPanel          // the latest agents panel, nil before the first agent
 	agentCalls   map[string]agentCall // Agent tool calls not yet matched to a task, by tool use id
 	lastFinished string               // name of the agent that finished last, for continuation turns
@@ -949,6 +950,33 @@ func (m *Manager) telegramFailed(s *sess, what string, err error) {
 		return
 	}
 	slog.Warn(what, "thread", s.row.ThreadID, "err", err)
+	if errors.Is(err, telegram.ErrMessageGone) {
+		m.probeTopic(s)
+	}
+}
+
+// probeInterval limits topic probes after failed edits: a deleted status
+// message fails every refresh.
+const probeInterval = time.Minute
+
+// probeTopic closes the session if its topic is gone. An edit in a deleted
+// topic may fail as "message not found", which also means the user deleted
+// just that message, so the topic itself is asked.
+func (m *Manager) probeTopic(s *sess) {
+	now := m.d.Now()
+	m.mu.Lock()
+	skip := s.closed || (!s.probedAt.IsZero() && now.Sub(s.probedAt) < probeInterval)
+	if !skip {
+		s.probedAt = now
+	}
+	row := s.row
+	m.mu.Unlock()
+	if skip {
+		return
+	}
+	if ok, err := m.d.Topics.Alive(context.Background(), row.ThreadID, row.Project, row.Title); err == nil && !ok {
+		m.topicGone(s)
+	}
 }
 
 // topicGone closes a session whose topic was deleted: the process stops,

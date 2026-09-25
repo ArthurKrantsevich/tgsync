@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -524,6 +525,52 @@ func TestDeletedTopicClosesSession(t *testing.T) {
 	testutil.Eventually(t, "session dropped", func() bool { return !e.m.Owns(thread) && s.Closed() })
 	if rows, _ := e.st.OpenSessions(ctx); len(rows) != 0 {
 		t.Fatalf("store still has open sessions: %+v", rows)
+	}
+}
+
+// editGoneAPI answers edits in a deleted topic the way Telegram likely
+// does: "message to edit not found", not "topic deleted".
+type editGoneAPI struct{ *telegram.Fake }
+
+func (a editGoneAPI) EditMessage(ctx context.Context, msgID int, html string, kb telegram.Keyboard) error {
+	err := a.Fake.EditMessage(ctx, msgID, html, kb)
+	if errors.Is(err, telegram.ErrTopicGone) {
+		return fmt.Errorf("%w: message to edit not found", telegram.ErrMessageGone)
+	}
+	return err
+}
+
+func TestEditInDeletedTopicClosesSession(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	e.m.d.API = editGoneAPI{e.api}
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	e.api.DeleteTopic(thread)
+	s.Emit(agent.Event{Kind: agent.EventToolUse, ToolName: "Read", ToolInput: map[string]any{"file_path": "/w/demo/a.go"}})
+	testutil.Eventually(t, "session dropped", func() bool { return !e.m.Owns(thread) && s.Closed() })
+}
+
+func TestEditOfDeletedMessageKeepsSession(t *testing.T) {
+	e, ctx := newEnv(t, 3), context.Background()
+	e.m.d.API = editGoneAPI{e.api}
+	thread, _ := e.m.New(ctx, "demo", "/w/demo", "a")
+	s := e.session(t, 0)
+	var status int
+	testutil.Eventually(t, "status message", func() bool {
+		e.m.mu.Lock()
+		defer e.m.mu.Unlock()
+		status = e.m.sessions[thread].statusMsg
+		return status != 0
+	})
+	if err := e.api.DeleteMessage(ctx, status); err != nil { // the user removed just this message
+		t.Fatal(err)
+	}
+	s.Emit(agent.Event{Kind: agent.EventToolUse, ToolName: "Read", ToolInput: map[string]any{"file_path": "/w/demo/a.go"}})
+	s.Emit(agent.Event{Kind: agent.EventText, Text: "done"})
+	s.Emit(result())
+	e.hasMessage(t, thread, "Ход завершён")
+	if !e.m.Owns(thread) || s.Closed() {
+		t.Fatal("a deleted message is not a deleted topic")
 	}
 }
 
