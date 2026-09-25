@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Russian version: [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.2.0] - 2026-09-26
+
+Stability and cross-platform release: no new commands, many fixes. Upgrade by unpacking the new archive and running the install script again; settings, sessions and the database are kept.
+
+### Fixed
+
+- **Turn summary could miss an edit.** When the agent changed a file without changing its size within the same second, the summary showed 0 changes and rollback treated the file as edited later. Snapshots now keep git's "racy" check.
+- **The node no longer dies on a panic in a session.** Panics in session background work (agent events, file delivery, timers, agents panel) are recovered and logged; the turn ends as failed instead of taking the whole node down.
+- **Deleted topics are detected on edits too.** When an edit fails with "message not found", the node checks whether the topic still exists and closes the session if it is gone.
+- **Windows:** paths inside a project are always shown and passed to git with `/`; a file swapped after the safety check is refused on Windows as on Linux/macOS; the agents panel hides the oldest finished agents when several finish at once; the installer and uninstaller stop a running `tgsync.exe` before replacing it.
+- **macOS:** askpass socket tests no longer exceed the 104-byte socket path limit.
+- **sudo detection:** a relative path such as `./internal/sudo` in a command is no longer taken for a wrapped `sudo` call.
+- **Control topic:** `/usage` output and rate-limit notices are now removed after an hour like other service messages; confirming 🧹 cleanup after its message was already gone no longer shows an error and still refreshes the card.
+- **Time limit:** when interrupting a turn that ran over `MAX_TURN_DURATION` keeps failing, the warning is repeated at most once a minute instead of every second.
+
+### Changed
+
+- **Faster turn snapshots.** A persistent side index per repository (in the user cache folder) lets git skip unchanged untracked files, so big untracked folders no longer slow every turn. If a snapshot still fails, the topic gets a short note instead of a silently missing summary.
+- **Config errors are in English**, including duration errors (`X must be a duration like 30m or 2h`).
+- **Releases** start with an install guide in English and Russian.
+- Dependencies: `golang.org/x/sys` 0.48.0; CI actions `checkout`, `setup-go`, `goreleaser-action` v7.
+
+### Security
+
+- `profiles.yaml` and the sudo askpass socket are now protected files, like `.env` and the database: the agent cannot read or change them without your confirmation.
+
 ## [0.1.0] - 2026-09-26
 
 First public release.
@@ -88,4 +114,5 @@ First public release.
 - Path containment is OS-aware (Windows drive and Git Bash spellings, case folding, trailing dots, streams, hard links); sent files are read through one checked handle.
 - Panics in update handlers are recovered; file downloads, speech recognition and transcript reads are bounded in time or size; button data stays within Telegram's limits; buttons kept per session are capped; double taps cannot create duplicate sessions or topics.
 
+[0.2.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.1.0
