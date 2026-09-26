@@ -47,7 +47,7 @@ func main() {
 		}
 	}
 	// sudo runs this binary as SUDO_ASKPASS; see package sudo.
-	if os.Getenv("TGSYNC_ASKPASS") == "1" {
+	if askpassMode(os.Getenv, os.Args) {
 		// The agent inherits the node's environment, BOT_LANGUAGE included.
 		setLanguage()
 		if err := sudo.Askpass(os.Getenv("TGSYNC_ASKPASS_SOCK"), os.Getenv(sudo.TokenVar), os.Stdout); err != nil {
@@ -85,6 +85,24 @@ func main() {
 		fmt.Fprintln(os.Stderr, "tgsync:", err)
 		os.Exit(1)
 	}
+}
+
+// askpassMode reports whether sudo started this process as its askpass
+// program. The agent's whole environment carries TGSYNC_ASKPASS=1, so the
+// variable alone is not enough: tgsync check or tgsync version run by the
+// agent (make install does) must still work. sudo always passes its prompt
+// as the only argument, which is never a subcommand name.
+func askpassMode(getenv func(string) string, args []string) bool {
+	if getenv("TGSYNC_ASKPASS") != "1" {
+		return false
+	}
+	if len(args) > 1 {
+		switch args[1] {
+		case "run", "check", "profile", "version":
+			return false
+		}
+	}
+	return true
 }
 
 // enterHome switches to the node directory so .env, data/ and relative paths resolve there.

@@ -2,9 +2,10 @@
 
 EXE := $(shell go env GOEXE)
 UNAME := $(shell uname -s 2>/dev/null)
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 build:
-	go build -o bin/tgsync$(EXE) ./cmd/tgsync
+	go build -ldflags "-X main.version=$(VERSION)" -o bin/tgsync$(EXE) ./cmd/tgsync
 
 test:
 	go test -race ./...

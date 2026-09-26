@@ -71,7 +71,12 @@ New-Item -ItemType Directory -Force -Path $BinDir, (Join-Path $Conf 'data') | Ou
 if ((Get-Command go -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $Repo 'go.mod'))) {
     Msg "→ building $Bin" "→ сборка $Bin"
     Push-Location $Repo
-    try { go build -o $Bin ./cmd/tgsync } finally { Pop-Location }
+    # Stamp the version the way release builds do.
+    $Version = $null
+    # try: Windows PowerShell 5.1 turns git's stderr into a terminating error under Stop.
+    try { $Version = git -C $Repo describe --tags --always --dirty 2>$null } catch { }
+    if (-not $Version) { $Version = "dev" }
+    try { go build -ldflags "-X main.version=$Version" -o $Bin ./cmd/tgsync } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { exit 1 }
 } elseif (Test-Path (Join-Path $Repo 'tgsync.exe')) {
     # Release archive: the binary sits next to scripts\.

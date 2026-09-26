@@ -76,7 +76,9 @@ done
 mkdir -p "$BIN_DIR"
 if command -v go >/dev/null 2>&1 && [ -f "$REPO/go.mod" ]; then
 	msg "→ building $BIN" "→ сборка $BIN"
-	(cd "$REPO" && go build -o "$BIN" ./cmd/tgsync)
+	# Stamp the version the way release builds do: v0.3.0, or v0.3.0-2-gabc123-dirty between tags.
+	VERSION=$(git -C "$REPO" describe --tags --always --dirty 2>/dev/null || echo dev)
+	(cd "$REPO" && go build -ldflags "-X main.version=$VERSION" -o "$BIN" ./cmd/tgsync)
 elif [ -x "$REPO/tgsync" ]; then
 	# Release archive: the binary sits next to scripts/.
 	cp "$REPO/tgsync" "$BIN"

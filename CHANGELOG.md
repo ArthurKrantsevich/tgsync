@@ -8,6 +8,11 @@ Russian version: [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `tgsync check`, `version`, `run` and `profile` work when started by the agent (for example `make install` from a session): the agent's environment no longer switches every tgsync call into sudo askpass mode.
+- `tgsync version` of a build from source shows the git version (`v0.3.0`, `v0.3.0-2-gabc123`) instead of `dev`.
+
 ## [0.3.0] - 2026-09-26
 
 English interface and quieter auto-approve. Upgrade: unpack the new archive and run the install script again. To keep the Russian interface, add `BOT_LANGUAGE=ru` to `.env` before restarting, then run `tgsync profile`.
