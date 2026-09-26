@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Russian version: [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [0.2.1] - 2026-09-26
+
+Security and reliability fixes. Upgrade: unpack the new archive and run the install script again.
+
+### Security
+
+- **sudo password could reach the agent.** A command could set its own `SUDO_ASKPASS`, and sudo would hand the one-time token to that program. Every approved sudo call now gets tgsync's own askpass; commands that set `SUDO_ASKPASS` or `PATH`, define a `sudo` function or alias, or run sudo from outside the system folders are refused.
+- **File tools follow links and `~`.** Read, Write, Grep, Glob and the other file tools expand `~` and resolve symlinks before the protected-file checks, so a link to the tgsync folder no longer gets through.
+- **Bash commands reaching the tgsync folder** are caught in more spellings: `$HOME`, `~user`, `$XDG_CONFIG_HOME`/`$APPDATA`, relative paths after `cd`, scripts in `sh -c` or heredocs with globs or variables. A command the parser cannot read now asks for confirmation.
+- **Saved "Always" rules are narrower.** `git config`, `git -c`, any `-o`/`--output` and any argument pointing into `.git`, `.claude` or other sensitive files are approved once only and are not covered by existing rules. Quoted command names (`\rm`, `"rm"`) no longer slip past the once-only list.
+- sudo inside a loop or function may ask for the password up to 5 times.
+
+### Fixed
+
+- **Turn snapshots could break for good** after git was stopped mid-snapshot (timeout or node shutdown) and left `index.lock` behind. Stale locks are removed; git is asked to stop gracefully first; a timeout is not retried; an unusable cache folder falls back to a temporary index; side indexes unused for 30 days are deleted.
+- After a recovered panic whose interrupt failed, the claude process is restarted instead of receiving the next message while still busy.
+- A panic while handling timers no longer disables `MAX_TURN_DURATION` for that turn.
+- Fewer false confirmations: commit messages with `/` or `~`, building into a folder named `tgsync`, `ls ..` from a project in the home folder.
+
 ## [0.2.0] - 2026-09-26
 
 Stability and cross-platform release: no new commands, many fixes. Upgrade by unpacking the new archive and running the install script again; settings, sessions and the database are kept.
@@ -114,5 +133,6 @@ First public release.
 - Path containment is OS-aware (Windows drive and Git Bash spellings, case folding, trailing dots, streams, hard links); sent files are read through one checked handle.
 - Panics in update handlers are recovered; file downloads, speech recognition and transcript reads are bounded in time or size; button data stays within Telegram's limits; buttons kept per session are capped; double taps cannot create duplicate sessions or topics.
 
+[0.2.1]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.1.0
