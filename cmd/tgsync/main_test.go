@@ -38,3 +38,26 @@ func TestProtectedPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestAskpassMode(t *testing.T) {
+	on := func(string) string { return "1" }
+	off := func(string) string { return "" }
+	cases := []struct {
+		getenv func(string) string
+		args   []string
+		want   bool
+	}{
+		{on, []string{"tgsync", "[sudo] password for user: "}, true},
+		{on, []string{"tgsync"}, true},
+		{on, []string{"tgsync", "check"}, false},
+		{on, []string{"tgsync", "version"}, false},
+		{on, []string{"tgsync", "run"}, false},
+		{on, []string{"tgsync", "profile"}, false},
+		{off, []string{"tgsync", "[sudo] password for user: "}, false},
+	}
+	for _, c := range cases {
+		if got := askpassMode(c.getenv, c.args); got != c.want {
+			t.Errorf("askpassMode(%q) = %v, want %v", c.args, got, c.want)
+		}
+	}
+}

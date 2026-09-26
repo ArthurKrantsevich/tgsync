@@ -17,9 +17,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # The notes come from CHANGELOG.md and CHANGELOG.ru.md; the step fails
+      # when the tagged version has no section there.
+      - name: Release notes
+        run: sh scripts/release-notes.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/notes.md"
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: release --clean --release-header-tmpl .github/release-header.md
+          args: release --clean --release-notes ${{ runner.temp }}/notes.md --release-footer-tmpl .github/release-install.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

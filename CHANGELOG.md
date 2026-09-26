@@ -8,18 +8,31 @@ Russian version: [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `tgsync check`, `version`, `run` and `profile` work when started by the agent (for example `make install` from a session): the agent's environment no longer switches every tgsync call into sudo askpass mode.
+- `tgsync version` of a build from source shows the git version (`v0.3.0`, `v0.3.0-2-gabc123`) instead of `dev`.
+
 ## [0.3.0] - 2026-09-26
 
 English interface and quieter auto-approve. Upgrade: unpack the new archive and run the install script again. To keep the Russian interface, add `BOT_LANGUAGE=ru` to `.env` before restarting, then run `tgsync profile`.
 
 ### Added
 
-- **Interface language switch.** `BOT_LANGUAGE` in `.env` picks the language of the bot's messages and buttons, the command descriptions in Telegram and `tgsync check`: `en` (default) or `ru`. The install and uninstall scripts follow it too.
+- **English interface.** Every message, button, toast and the command menu of the bot, the bot and group descriptions, `tgsync check`, configuration errors, sudo askpass messages and the install and uninstall scripts now exist in English and Russian. `BOT_LANGUAGE` in `.env` picks one: `en` (default) or `ru`. An unknown value is reported by `tgsync check`.
+- **One string catalog** (`internal/i18n`). Tests fail when a language is missing, when the two languages use different format verbs, or when code uses an unknown key or the catalog keeps an unused one.
+- English screenshots in the README and English labels quoted throughout the English guides.
 
 ### Changed
 
 - **The default interface language is now English — set `BOT_LANGUAGE=ru` to keep Russian.**
-- Auto-approve modes (🟢/🟡) no longer post a note for every command. The status line shows the agent's description of what it is doing ("▶ Running the tests") instead of the command; only sudo and destructive commands (deleting files, `git push`/`reset`, stopping processes, …) still leave a "✅ auto" note with the command.
+- **Quieter auto-approve.** In 🟢 and 🟡 modes the bot no longer posts a "✅ auto" note for every command. The status line shows the agent's own description of what it is doing ("▶ Running the tests") instead of the raw command. sudo and destructive commands (removing or moving files, `chmod`, stopping processes, `systemctl`, `git push`/`reset`/`clean`/`checkout`, `git branch -D`, `docker rm`/`prune`, shells, `eval`, `xargs`, commands that do not parse) still leave a silent note with the description and the command.
+- The agent is asked to describe every command in the user's language as what it does and why.
+
+### Fixed
+
+- Russian plurals: "2 файла", "Удалить 1 тему?", "Откачено 2 файла" instead of "2 файлов", "1 тем" and a bare number.
+- A session whose topic still has the default title is renamed from its first message even after `BOT_LANGUAGE` changes.
 
 ## [0.2.1] - 2026-09-26
 
