@@ -4,7 +4,7 @@
 
 tgsync is a remote control for an agent that runs on your computer as your OS user. Whoever controls a node can, in effect, run commands as you. This document describes what tgsync protects against, what it does not, and how to run it carefully.
 
-The bot's interface is in Russian; labels are quoted as they appear in Telegram, with an English explanation.
+Labels are quoted as they appear in the English interface (`BOT_LANGUAGE=en`, the default).
 
 - [Threat model](#threat-model)
 - [Who can control a node](#who-can-control-a-node)
@@ -12,7 +12,7 @@ The bot's interface is in Russian; labels are quoted as they appear in Telegram,
 - [What the agent can do in each mode](#what-the-agent-can-do-in-each-mode)
 - [tgsync's own files](#tgsyncs-own-files)
 - [Sensitive project files](#sensitive-project-files)
-- [The «Всегда» (Always) button](#the-всегда-always-button)
+- [The Always button](#the-always-button)
 - [sudo](#sudo)
 - [Data stored and where](#data-stored-and-where)
 - [What is sent to Telegram](#what-is-sent-to-telegram)
@@ -58,14 +58,14 @@ The bot's interface is in Russian; labels are quoted as they appear in Telegram,
 
 The auto-approve mode is set per node with `/approve` (see [usage.md](usage.md#permissions)).
 
-| | 🔴 По запросу (On request, default) | 🟡 Всё, кроме sudo (All but sudo) | 🟢 Всё сам (Everything) |
+| | 🔴 Ask me (default) | 🟡 All but sudo | 🟢 Allow all |
 |---|---|---|---|
 | Read and search files | no prompt | no prompt | no prompt |
 | Edit files inside the project | no prompt, except [sensitive files](#sensitive-project-files) | no prompt | no prompt |
 | Edit files outside the project | button | no prompt | no prompt |
-| Shell commands | button, unless an «Всегда» rule matches | no prompt | no prompt |
+| Shell commands | button, unless an Always rule matches | no prompt | no prompt |
 | sudo (if `SUDO_MODE` is not `off`) | button | button | no prompt |
-| Commands that may touch tgsync's folder | button without «Всегда» | button without «Всегда» | button without «Всегда» |
+| Commands that may touch tgsync's folder | button without Always | button without Always | button without Always |
 | Questions from the agent | buttons | buttons | buttons |
 
 In every mode, whatever your Claude Code settings allow (`~/.claude/settings.json`, project settings) runs without a prompt. Make sure there are no broad rules there that you would not trust the agent with unattended.
@@ -80,7 +80,7 @@ tgsync's own files are `.env` (bot token, sudo password) and the SQLite database
 
 - Read, write and search tools (`Read`, `Grep`, `Glob`, `LS`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`) that point at these files, or at a folder that holds them or tgsync's folder, are denied. `~` is expanded and symlinks are followed first, so a link in the project that leads to tgsync's folder does not help; a `Glob` pattern that starts with such a folder is denied too.
 - A shell command with the literal path of `.env` or the database is denied, with or without sudo.
-- A shell command that may reach tgsync's folder another way always needs a button without «Всегда», in every auto-approve mode, and saved rules do not apply to it. Read such commands carefully. This covers `~`, `~user` and `$HOME`; `$XDG_CONFIG_HOME`, `$APPDATA`, `$PWD` and similar variables (expanded from the node's environment); relative paths, also after `cd`/`pushd`, and links inside the project; globs such as `tgs*`; unknown variables before `/tgsync/`; scripts run by `sh -c`, `eval`, `python -c`/`node -e` and heredocs fed to a shell or an interpreter; parent folders such as `~` or `/`; and commands the shell parser does not support.
+- A shell command that may reach tgsync's folder another way always needs a button without Always, in every auto-approve mode, and saved rules do not apply to it. Read such commands carefully. This covers `~`, `~user` and `$HOME`; `$XDG_CONFIG_HOME`, `$APPDATA`, `$PWD` and similar variables (expanded from the node's environment); relative paths, also after `cd`/`pushd`, and links inside the project; globs such as `tgs*`; unknown variables before `/tgsync/`; scripts run by `sh -c`, `eval`, `python -c`/`node -e` and heredocs fed to a shell or an interpreter; parent folders such as `~` or `/`; and commands the shell parser does not support.
 - Not flagged: quoted text (`git commit -m "a / b"`, a heredoc written to a file) unless a shell or an interpreter runs it, paths inside the project, and the project's own parent (`ls ..`, `cd .. && ls`) unless the command walks folder trees (`grep -r`, `rg`, `find`, `tar` …).
 - `send_file`, `/file`, `/ls` and turn diffs never send these files, even if they sit inside a project.
 
@@ -90,13 +90,13 @@ tgsync's own files are `.env` (bot token, sudo password) and the SQLite database
 
 Some project files make git, Claude Code or the shell run commands: `.git/` (config, hooks), `.gitattributes`, `.gitmodules`, `.claude/`, `.envrc` at any depth, and `.mcp.json` and `.vscode/tasks.json` at the project root. tgsync itself runs `git add` for turn snapshots, which runs `.gitattributes` filters.
 
-So in 🔴 mode, writing such a file needs a button even inside the project, with no «Всегда», and saved rules do not apply. Symlinks are resolved: a file whose link leads outside the project or into one of these paths also needs a button.
+So in 🔴 mode, writing such a file needs a button even inside the project, with no Always, and saved rules do not apply. Symlinks are resolved: a file whose link leads outside the project or into one of these paths also needs a button.
 
-## The «Всегда» (Always) button
+## The Always button
 
 - For shell, the command and its first argument are saved (`go test`). Chains, substitutions and redirections never match a rule.
-- Shells and interpreters, `rm`, `dd`, `chmod`, `find`, wrappers (`env`, `xargs`, `eval`, `timeout` …), `ssh`, `sudo`, commands prefixed with `VAR=value` or named through a variable, `git` with global options and `git config`, commands with an `-o`/`--output` flag, and commands with an argument that points into `.git/`, `.claude/` or another sensitive project file (by name or through a link) get no «Всегда» button. Older rules such as `python3`, `rm`, `git log` or `go build` no longer apply to them. Quoting the name (`\rm`, `"rm"`) changes nothing.
-- A rule such as `npm run` or `make` allows any script or target, so keep «Всегда» for narrow commands.
+- Shells and interpreters, `rm`, `dd`, `chmod`, `find`, wrappers (`env`, `xargs`, `eval`, `timeout` …), `ssh`, `sudo`, commands prefixed with `VAR=value` or named through a variable, `git` with global options and `git config`, commands with an `-o`/`--output` flag, and commands with an argument that points into `.git/`, `.claude/` or another sensitive project file (by name or through a link) get no Always button. Older rules such as `python3`, `rm`, `git log` or `go build` no longer apply to them. Quoting the name (`\rm`, `"rm"`) changes nothing.
+- A rule such as `npm run` or `make` allows any script or target, so keep Always for narrow commands.
 - For an edit outside the project, the rule covers only that file's folder, not subfolders; older rules without a folder no longer apply.
 - Rules are stored in the database per project.
 
@@ -104,7 +104,7 @@ So in 🔴 mode, writing such a file needs a button even inside the project, wit
 
 The agent's Bash runs without a terminal, so `sudo` cannot prompt for a password itself. tgsync provides an askpass bridge:
 
-1. When the agent wants to run a command with `sudo`, the topic shows a «🔐 sudo» request with the command and ✅/❌ buttons. There is no «Всегда».
+1. When the agent wants to run a command with `sudo`, the topic shows a "🔐 sudo" request with the command and ✅/❌ buttons. There is no Always.
 2. After ✅, tgsync finds the real `sudo` calls in the command (with a shell parser, not a text search) and rewrites each as `SUDO_ASKPASS=<tgsync binary> TGSYNC_SUDO_TOKEN=<one-time token> sudo -A …`, after any `VAR=value` of the command itself, so tgsync's askpass always wins. The token is valid only for those calls, for 5 minutes and until the turn ends; a call inside a loop or a function may ask up to 5 times. sudo through wrappers (`env`, `xargs`, `find -exec`, `sh -c`) is not supported; the agent is asked to rewrite the command.
    A command that mentions `SUDO_ASKPASS`, assigns `PATH`, defines a `sudo` function or alias, or runs sudo from outside the system folders (`./sudo`, `/tmp/x/sudo`) is refused before any prompt: the program it chose would get the token and the password.
 3. `sudo` runs `tgsync` as askpass, which passes the token to the node over the unix socket `askpass.sock` (mode 0600). The node releases the password only if the token is valid and the socket peer was started by `sudo`: its parent must be named `sudo` and run with effective uid 0, like a real setuid sudo (checked with `SO_PEERCRED` and `/proc/<pid>/status` on Linux, `LOCAL_PEERPID` and `sysctl` on macOS).
@@ -135,7 +135,7 @@ Node folder: `~/.config/tgsync` on Linux, `~/Library/Application Support/tgsync`
 |---|---|---|
 | `.env` | node folder, mode 0600 | bot token, user and group IDs, settings, sudo password in `env` mode |
 | `profiles.yaml` | node folder | plugin profiles |
-| SQLite database | `DB_PATH` (default `data/tgsync.db` in the node folder) | sessions and their topics, «Всегда» rules, auto-approve mode, token usage, subscription limit state, IDs of control topic messages to clean up |
+| SQLite database | `DB_PATH` (default `data/tgsync.db` in the node folder) | sessions and their topics, Always rules, auto-approve mode, token usage, subscription limit state, IDs of control topic messages to clean up |
 | incoming files | `.tgsync/inbox/` in the project | files you sent to the agent; excluded from git via `.git/info/exclude` |
 | turn snapshots | git objects in the project repository | trees of the working directory before and after each turn; branches, index and stash are untouched, and `git gc` removes unreachable objects |
 | logs | journald (`journalctl --user -u tgsync`), `~/Library/Logs/tgsync.log` on macOS, the `TGSYNC_LOG` file on Windows | node events and errors; they may contain paths, commands and error text — review before sharing |

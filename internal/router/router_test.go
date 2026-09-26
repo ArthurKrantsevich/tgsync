@@ -879,13 +879,13 @@ func TestNewWithoutArgsListsProjects(t *testing.T) {
 }
 
 func TestSessionHelpMentionsAgents(t *testing.T) {
-	if !strings.Contains(helpSession, "/agents") {
+	if !strings.Contains(helpSession(), "/agents") {
 		t.Fatal("session help must mention /agents")
 	}
 }
 
 func TestHelpMentionsUsage(t *testing.T) {
-	if !strings.Contains(helpSession, "/context") || !strings.Contains(helpSession, "/usage") || !strings.Contains(helpControl, "/usage") {
+	if !strings.Contains(helpSession(), "/context") || !strings.Contains(helpSession(), "/usage") || !strings.Contains(helpControl(), "/usage") {
 		t.Fatal("help must mention /context and /usage")
 	}
 }

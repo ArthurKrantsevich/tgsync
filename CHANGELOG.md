@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Russian version: [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
+## [Unreleased]
+
+## [0.3.0] - 2026-09-26
+
+English interface and quieter auto-approve. Upgrade: unpack the new archive and run the install script again. To keep the Russian interface, add `BOT_LANGUAGE=ru` to `.env` before restarting, then run `tgsync profile`.
+
+### Added
+
+- **Interface language switch.** `BOT_LANGUAGE` in `.env` picks the language of the bot's messages and buttons, the command descriptions in Telegram and `tgsync check`: `en` (default) or `ru`. The install and uninstall scripts follow it too.
+
+### Changed
+
+- **The default interface language is now English — set `BOT_LANGUAGE=ru` to keep Russian.**
+- Auto-approve modes (🟢/🟡) no longer post a note for every command. The status line shows the agent's description of what it is doing ("▶ Running the tests") instead of the command; only sudo and destructive commands (deleting files, `git push`/`reset`, stopping processes, …) still leave a "✅ auto" note with the command.
+
 ## [0.2.1] - 2026-09-26
 
 Security and reliability fixes. Upgrade: unpack the new archive and run the install script again.
@@ -133,6 +148,8 @@ First public release.
 - Path containment is OS-aware (Windows drive and Git Bash spellings, case folding, trailing dots, streams, hard links); sent files are read through one checked handle.
 - Panics in update handlers are recovered; file downloads, speech recognition and transcript reads are bounded in time or size; button data stays within Telegram's limits; buttons kept per session are capped; double taps cannot create duplicate sessions or topics.
 
+[Unreleased]: https://github.com/ArthurKrantsevich/tgsync/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.3.0
 [0.2.1]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.1.0

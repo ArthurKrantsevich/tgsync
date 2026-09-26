@@ -40,7 +40,7 @@ In the unpacked folder:
 cp .env.example .env
 ```
 
-Fill at least `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `GROUP_CHAT_ID` and `PROJECTS_ROOT` (the folder with your projects), then check:
+Fill at least `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `GROUP_CHAT_ID` and `PROJECTS_ROOT` (the folder with your projects). The bot speaks English by default; set `BOT_LANGUAGE=ru` for Russian. Then check:
 
 ```sh
 ./tgsync check          # Windows: .\tgsync.exe check
@@ -79,7 +79,7 @@ Guides: [setup](https://github.com/ArthurKrantsevich/tgsync/blob/main/docs/en/se
 3. Добавь бота **администратором**: обязательно *Управление темами*; желательно *Закрепление сообщений*, *Удаление сообщений*, *Изменение профиля группы*.
 4. Свой id возьми у [@userinfobot](https://t.me/userinfobot), id группы (`-100…`) — по [гайду, раздел 2](https://github.com/ArthurKrantsevich/tgsync/blob/main/docs/ru/setup.md).
 
-**3. Настройка.** В распакованной папке `cp .env.example .env`, заполни минимум `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `GROUP_CHAT_ID`, `PROJECTS_ROOT` (папка с проектами). Проверь: `./tgsync check` (на Windows `.\tgsync.exe check`).
+**3. Настройка.** В распакованной папке `cp .env.example .env`, заполни минимум `TELEGRAM_BOT_TOKEN`, `ALLOWED_USER_IDS`, `GROUP_CHAT_ID`, `PROJECTS_ROOT` (папка с проектами). Для русского интерфейса добавь `BOT_LANGUAGE=ru` (по умолчанию английский). Проверь: `./tgsync check` (на Windows `.\tgsync.exe check`).
 
 **4. Установка сервисом** (из распакованной папки):
 - Linux и macOS: `sh scripts/install.sh` — systemd / launchd. На Linux скрипт сам включит *linger*, чтобы нода работала без входа в систему; если не вышло — `sudo loginctl enable-linger "$USER"`.

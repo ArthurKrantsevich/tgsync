@@ -3,17 +3,23 @@ package telegram
 
 import (
 	"context"
-	"errors"
 	"time"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // ErrTopicGone means the forum topic was deleted. Telegram sends no update
 // for that, so it only shows up as an error on the next call.
-var ErrTopicGone = errors.New("тема удалена")
+var ErrTopicGone error = localError("tg.topic_gone")
 
 // ErrMessageGone means the message to edit no longer exists (the user
 // deleted it) or never did.
-var ErrMessageGone = errors.New("сообщение удалено")
+var ErrMessageGone error = localError("tg.message_gone")
+
+// localError is a sentinel error whose text follows the interface language.
+type localError string
+
+func (e localError) Error() string { return i18n.T(string(e)) }
 
 // RetryError is a temporary failure: Telegram asked to slow down (429) or
 // could not be reached. After is Telegram's retry_after, or 0 to back off.
@@ -26,7 +32,7 @@ type RetryError struct {
 }
 
 func (e *RetryError) Error() string {
-	return "telegram: временная ошибка: " + e.Err.Error()
+	return i18n.T("tg.retry", e.Err.Error())
 }
 func (e *RetryError) Unwrap() error { return e.Err }
 

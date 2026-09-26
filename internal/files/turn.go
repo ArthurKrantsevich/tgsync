@@ -18,6 +18,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // gitTimeout bounds each git run; tests shorten it.
@@ -449,7 +451,7 @@ func TurnDiff(ctx context.Context, dir, base, end string, rels []string) (string
 		return "", err
 	}
 	if len(bytes.TrimSpace(out)) == 0 {
-		return "", errors.New("нет изменений за ход")
+		return "", errors.New(i18n.T("files.no_turn_changes"))
 	}
 	return capDiff(out)
 }
@@ -475,7 +477,7 @@ func Restore(ctx context.Context, dir, base, end string, rels []string) (Restore
 		return res, err
 	}
 	if cur == "" {
-		return res, errors.New("проект не в git-репозитории")
+		return res, errors.New(i18n.T("files.no_git"))
 	}
 	later, _, err := changes(ctx, dir, end, cur, rels)
 	if err != nil {

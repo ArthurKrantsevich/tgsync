@@ -1,8 +1,10 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"path/filepath"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // FindHome picks the directory the node runs in: TGSYNC_HOME when set,
@@ -13,7 +15,7 @@ import (
 func FindHome(getenv func(string) string, cwd, userHome, configDir string, exists func(string) bool) (string, error) {
 	if dir := getenv("TGSYNC_HOME"); dir != "" {
 		if !exists(dir) {
-			return "", fmt.Errorf("TGSYNC_HOME=%s: directory does not exist", dir)
+			return "", errors.New(i18n.T("config.home_missing", dir))
 		}
 		return dir, nil
 	}

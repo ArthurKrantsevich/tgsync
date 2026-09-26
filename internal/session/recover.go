@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 )
@@ -17,7 +18,7 @@ import (
 // stack and puts the session back into a usable state instead.
 
 // internalError is what the user sees after a recovered panic.
-const internalError = "❌ Внутренняя ошибка tgsync, подробности в логе ноды."
+func internalError() string { return i18n.T("session.internal_error") }
 
 // lockWait bounds the check that m.mu is free after a panic.
 const lockWait = 2 * time.Second
@@ -72,7 +73,7 @@ func (m *Manager) eventPanicked(s *sess, ev agent.Event) {
 	if closed {
 		return
 	}
-	m.say(ctx, s, internalError, false)
+	m.say(ctx, s, internalError(), false)
 	switch {
 	case ev.Kind == agent.EventResult:
 		m.failTurn(ctx, s)

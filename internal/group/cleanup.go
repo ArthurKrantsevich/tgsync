@@ -3,9 +3,9 @@ package group
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
@@ -25,24 +25,24 @@ func (g *Group) Ask(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if len(rows) == 0 {
-		return "Убирать нечего", nil
+		return i18n.T("group.cleanup.nothing"), nil
 	}
-	lines := []string{fmt.Sprintf("🧹 <b>Удалить %d тем?</b> История в них пропадёт.", len(rows))}
+	lines := []string{i18n.N("group.cleanup.n.ask", len(rows), len(rows))}
 	for i, r := range rows {
 		if i == maxListed {
-			lines = append(lines, fmt.Sprintf("… и ещё %d", len(rows)-maxListed))
+			lines = append(lines, i18n.T("group.cleanup.more", len(rows)-maxListed))
 			break
 		}
-		why := "упала без ответа"
+		why := i18n.T("group.cleanup.crashed")
 		if r.State == store.StateClosed {
-			why = "закрыта сегодня"
+			why = i18n.T("group.cleanup.closed_today")
 			if days := int(g.now().Sub(r.UpdatedAt).Hours() / 24); days > 0 {
-				why = fmt.Sprintf("закрыта %d дн. назад", days)
+				why = i18n.N("group.cleanup.n.closed_days", days, days)
 			}
 		}
 		lines = append(lines, "• "+render.Escape(topics.Name(r.Project, r.Title))+" ("+why+")")
 	}
-	kb := telegram.Keyboard{{{Text: "🗑 Удалить", Data: "cl:yes"}, {Text: "Отмена", Data: "cl:no"}}}
+	kb := telegram.Keyboard{{{Text: i18n.T("group.btn.delete"), Data: "cl:yes"}, {Text: i18n.T("group.btn.cancel"), Data: "cl:no"}}}
 	id, err := g.API.SendMessage(ctx, g.Topics.Control(), strings.Join(lines, "\n"), kb, true)
 	if err == nil {
 		g.Track(ctx, id)
@@ -75,11 +75,11 @@ func (g *Group) Confirm(ctx context.Context, msgID int) error {
 		}
 	}
 	if failed > maxListed {
-		fails = append(fails, fmt.Sprintf("… и ещё %d", failed-maxListed))
+		fails = append(fails, i18n.T("group.cleanup.more", failed-maxListed))
 	}
-	text := fmt.Sprintf("🧹 Удалено %d тем.", done)
+	text := i18n.N("group.cleanup.n.done", done, done)
 	if failed > 0 {
-		text = fmt.Sprintf("🧹 Удалено %d из %d. Ошибки:\n%s", done, len(rows), strings.Join(fails, "\n"))
+		text = i18n.T("group.cleanup.partial", done, len(rows), strings.Join(fails, "\n"))
 	}
 	// A confirmation that is gone (swept, deleted) takes no result; the
 	// topics are deleted all the same, so the card is refreshed anyway.
@@ -100,5 +100,5 @@ func cut(s string, n int) string {
 
 // Cancel closes the confirmation without deleting anything.
 func (g *Group) Cancel(ctx context.Context, msgID int) error {
-	return g.API.EditMessage(ctx, msgID, "🧹 Уборка отменена.", nil)
+	return g.API.EditMessage(ctx, msgID, i18n.T("group.cleanup.canceled"), nil)
 }

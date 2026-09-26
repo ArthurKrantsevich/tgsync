@@ -3,17 +3,17 @@ package group
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
 )
 
 func cardKeyboard() telegram.Keyboard {
-	return telegram.Keyboard{{{Text: "🧹 Уборка", Data: "cl:ask"}, {Text: "🧽 Очистить тему", Data: "cl:sweep"}}}
+	return telegram.Keyboard{{{Text: i18n.T("group.btn.cleanup"), Data: "cl:ask"}, {Text: i18n.T("group.btn.sweep"), Data: "cl:sweep"}}}
 }
 
 func (g *Group) cardText(ctx context.Context) (string, error) {
@@ -21,14 +21,13 @@ func (g *Group) cardText(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text := fmt.Sprintf("🖥 <b>%s</b>\nОткрытых сессий: %d · закрытых: %d",
-		render.Escape(g.Topics.Node()), open, closed)
+	text := i18n.T("group.card", render.Escape(g.Topics.Node()), open, closed)
 	if !g.Started.IsZero() {
 		layout := "15:04"
 		if y, m, d := g.now().Date(); g.Started.Day() != d || g.Started.Month() != m || g.Started.Year() != y {
 			layout = "02.01 15:04"
 		}
-		text += "\n🟢 онлайн с " + g.Started.Format(layout)
+		text += i18n.T("group.card.online", g.Started.Format(layout))
 	}
 	return text, nil
 }

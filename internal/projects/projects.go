@@ -10,10 +10,17 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // ErrBadName rejects names that could escape the projects root.
-var ErrBadName = errors.New("имя проекта: латиница, цифры, «.», «_», «-», до 64 символов, первый символ — буква или цифра")
+var ErrBadName error = localError("projects.bad_name")
+
+// localError is a sentinel error whose text follows the interface language.
+type localError string
+
+func (e localError) Error() string { return i18n.T(string(e)) }
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
@@ -45,7 +52,7 @@ func (r Registry) Dir(name string) (string, error) {
 	}
 	dir := filepath.Join(r.Root, name)
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		return "", fmt.Errorf("проект %q не найден в %s", name, r.Root)
+		return "", errors.New(i18n.T("projects.not_found", name, r.Root))
 	}
 	return dir, nil
 }
@@ -57,7 +64,7 @@ func (r Registry) Create(ctx context.Context, name string) (string, error) {
 	}
 	dir := filepath.Join(r.Root, name)
 	if _, err := os.Stat(dir); err == nil {
-		return "", fmt.Errorf("проект %q уже существует", name)
+		return "", errors.New(i18n.T("projects.exists", name))
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err

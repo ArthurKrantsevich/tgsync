@@ -74,6 +74,7 @@ Syntax: one `NAME=value` per line, `#` starts a comment. Leading and trailing sp
 
 | Variable | Default | Description |
 |---|---|---|
+| `BOT_LANGUAGE` | `en` | Interface language: `en` or `ru`. Covers messages, buttons, the command menu and `tgsync check`. After changing it, restart the node and run `tgsync profile` to update the bot's descriptions. |
 | `NODE_NAME` | hostname | Name in the control topic title (`🖥 <name>`). Use a different name on each machine. |
 | `DB_PATH` | `./data/tgsync.db` | SQLite database. Relative to the node folder. The folder is created with mode `0700`. The database uses WAL, so `-wal` and `-shm` files appear next to it. |
 | `CLAUDE_CLI_PATH` | empty (search `PATH`) | Full path to the `claude` executable. Needed when the service's `PATH` does not include it. On Windows only the native `claude.exe` works; npm's `claude.cmd` shim is refused. |

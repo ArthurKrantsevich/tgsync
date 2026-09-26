@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
 	"github.com/ArthurKrantsevich/tgsync/internal/topics"
@@ -71,13 +72,13 @@ func (g *Group) Setup(ctx context.Context) {
 func (g *Group) noticeRights(ctx context.Context, r telegram.Rights) {
 	var missing []string
 	if !r.PinMessages {
-		missing = append(missing, "• «Закрепление сообщений» — закреплённая карточка ноды")
+		missing = append(missing, i18n.T("group.rights.pin"))
 	}
 	if !r.ChangeInfo {
-		missing = append(missing, "• «Изменение профиля группы» — аватар и описание группы")
+		missing = append(missing, i18n.T("group.rights.info"))
 	}
 	if !r.DeleteMessages {
-		missing = append(missing, "• «Удаление сообщений» — удаление пустых тем и 🧹 Уборка")
+		missing = append(missing, i18n.T("group.rights.delete"))
 	}
 	key := strings.Join(missing, "\n")
 	prev, err := g.Store.Get(ctx, keyMissing)
@@ -85,7 +86,7 @@ func (g *Group) noticeRights(ctx context.Context, r telegram.Rights) {
 		return
 	}
 	if key != "" {
-		text := "🔧 Боту не хватает прав администратора. Без них не работает:\n" + key
+		text := i18n.T("group.rights.notice", key)
 		if _, err := g.API.SendMessage(ctx, g.Topics.Control(), text, nil, true); err != nil {
 			slog.Warn("rights notice", "err", err)
 			return

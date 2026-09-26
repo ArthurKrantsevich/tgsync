@@ -5,14 +5,23 @@ import (
 	"image/png"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 func TestTextsFitTelegramLimits(t *testing.T) {
-	if n := utf8.RuneCountInString(ShortDescription); n == 0 || n > 120 {
-		t.Fatalf("short description: %d runes", n)
-	}
-	if n := utf8.RuneCountInString(Description); n == 0 || n > 512 {
-		t.Fatalf("description: %d runes", n)
+	defer i18n.Set(i18n.Current())
+	for _, l := range []i18n.Lang{i18n.EN, i18n.RU} {
+		i18n.Set(l)
+		if n := utf8.RuneCountInString(ShortDescription()); n == 0 || n > 120 {
+			t.Fatalf("%s short description: %d runes", l, n)
+		}
+		if n := utf8.RuneCountInString(Description()); n == 0 || n > 512 {
+			t.Fatalf("%s description: %d runes", l, n)
+		}
+		if n := utf8.RuneCountInString(GroupDescription()); n == 0 || n > 255 {
+			t.Fatalf("%s group description: %d runes", l, n)
+		}
 	}
 }
 

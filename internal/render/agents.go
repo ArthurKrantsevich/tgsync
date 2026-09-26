@@ -1,9 +1,10 @@
 package render
 
 import (
-	"fmt"
 	"strings"
 	"time"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // AgentEntry is one line of the agents list. Depth is the nesting under
@@ -38,14 +39,8 @@ func AgentsList(entries []AgentEntry, hidden Hidden) string {
 			done++
 		}
 	}
-	verb, ready := "работают", "готово"
-	if running == 1 {
-		verb = "работает"
-	}
-	if done == 1 {
-		ready = "готов"
-	}
-	lines := []string{fmt.Sprintf("🤖 <b>Агенты</b> · %d %s · %d %s", running, verb, done, ready)}
+	lines := []string{i18n.T("render.agents.head", running, i18n.N("render.agents.n.running", running),
+		done, i18n.N("render.agents.n.done", done))}
 	for _, e := range entries {
 		line := strings.Repeat("   ", e.Depth)
 		if e.Depth > 0 {
@@ -58,20 +53,12 @@ func AgentsList(entries []AgentEntry, hidden Hidden) string {
 		lines = append(lines, line)
 	}
 	if hidden.Running > 0 {
-		lines = append(lines, fmt.Sprintf("… ещё %d %s", hidden.Running, plural(hidden.Running, "работает", "работают")))
+		lines = append(lines, i18n.N("render.agents.n.more_running", hidden.Running, hidden.Running))
 	}
 	if hidden.Done > 0 {
-		lines = append(lines, fmt.Sprintf("… ещё %d %s", hidden.Done, plural(hidden.Done, "готовый", "готовых")))
+		lines = append(lines, i18n.N("render.agents.n.more_done", hidden.Done, hidden.Done))
 	}
 	return strings.Join(lines, "\n")
-}
-
-// plural picks the Russian form for a count: one for 1, 21, 31…, many otherwise.
-func plural(n int, one, many string) string {
-	if n%10 == 1 && n%100 != 11 {
-		return one
-	}
-	return many
 }
 
 // AgentCardInfo is what the card of one agent shows.
@@ -87,7 +74,11 @@ type AgentCardInfo struct {
 	ToolUses    int
 }
 
-var finishedWord = map[string]string{"completed": "Готово", "failed": "Ошибка", "stopped": "Остановлен"}
+// finishedKey holds the catalog keys of the "done in" line per final state.
+var finishedKey = map[string]string{
+	"completed": "render.agents.took.completed", "failed": "render.agents.took.failed",
+	"stopped": "render.agents.took.stopped",
+}
 
 // maxCardSummary keeps the card well within one Telegram message.
 const maxCardSummary = 1000
@@ -100,25 +91,25 @@ func AgentCard(c AgentCardInfo, now time.Time) string {
 	}
 	caller := c.Caller
 	if caller == "" {
-		caller = "основной агент"
+		caller = i18n.T("render.agents.main")
 	}
-	lines := []string{title, "Вызвал: " + Escape(caller)}
+	lines := []string{title, i18n.T("render.agents.caller", Escape(caller))}
 	tools := ""
 	if c.ToolUses > 0 {
-		tools = fmt.Sprintf(" · %d инстр.", c.ToolUses)
+		tools = i18n.N("render.agents.n.tools", c.ToolUses, c.ToolUses)
 	}
 	if c.State == "running" {
-		lines = append(lines, "Работает "+Duration(now.Sub(c.Started))+tools)
+		lines = append(lines, i18n.T("render.agents.running_for", Duration(now.Sub(c.Started)))+tools)
 		if c.Action != "" {
-			lines = append(lines, "Сейчас: "+Escape(oneLine(c.Action, 200)))
+			lines = append(lines, i18n.T("render.agents.now", Escape(oneLine(c.Action, 200))))
 		}
 		return strings.Join(lines, "\n")
 	}
-	word := finishedWord[c.State]
-	if word == "" {
-		word = "Завершён"
+	key := finishedKey[c.State]
+	if key == "" {
+		key = "render.agents.took.other"
 	}
-	lines = append(lines, word+" за "+Duration(c.Took)+tools)
+	lines = append(lines, i18n.T(key, Duration(c.Took))+tools)
 	if s := strings.TrimSpace(c.Summary); s != "" {
 		if r := []rune(s); len(r) > maxCardSummary {
 			s = string(r[:maxCardSummary-1]) + "…"

@@ -2,11 +2,12 @@ package permissions
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"strings"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/sudo"
 )
@@ -27,11 +28,11 @@ var ApproveModes = []string{ApproveAll, ApproveNoSudo, ApproveAsk}
 func ApproveLabel(mode string) string {
 	switch mode {
 	case ApproveAll:
-		return "🟢 Всё сам"
+		return i18n.T("perm.mode.all")
 	case ApproveNoSudo:
-		return "🟡 Всё, кроме sudo"
+		return i18n.T("perm.mode.no_sudo")
 	}
-	return "🔴 По запросу"
+	return i18n.T("perm.mode.ask")
 }
 
 // ApproveMode returns the node's approve mode; ApproveAsk when unset or
@@ -55,11 +56,13 @@ func (b *Broker) SetApproveMode(ctx context.Context, mode string) error {
 	case ApproveAll, ApproveNoSudo, ApproveAsk:
 		return b.st.SetApproveMode(ctx, mode)
 	}
-	return fmt.Errorf("неизвестный режим: %s", mode)
+	return errors.New(i18n.T("perm.mode.unknown", mode))
 }
 
-// autoAllow allows a request without asking and leaves a silent note in
-// the topic, so the user still sees what ran.
+// autoAllow allows a request without asking. Destructive commands and sudo
+// leave a silent note in the topic, so the user still sees what ran; every
+// other call shows up only in the turn's status line, as the agent's
+// description of it.
 func (b *Broker) autoAllow(ctx context.Context, si SessionInfo, req agent.PermissionRequest, isSudo bool) agent.PermissionDecision {
 	d := agent.PermissionDecision{Allow: true}
 	if isSudo {
@@ -68,14 +71,20 @@ func (b *Broker) autoAllow(ctx context.Context, si SessionInfo, req agent.Permis
 			return d
 		}
 	}
-	_, _ = b.api.SendMessage(ctx, si.ThreadID, "✅ авто: "+autoSummary(req, si.ProjectDir), nil, true)
+	if cmd, _ := req.Input["command"].(string); isSudo || (req.ToolName == "Bash" && destructive(cmd)) {
+		_, _ = b.api.SendMessage(ctx, si.ThreadID, i18n.T("perm.auto", autoSummary(req, si.ProjectDir)), nil, true)
+	}
 	return d
 }
 
 func autoSummary(req agent.PermissionRequest, dir string) string {
 	str := func(k string) string { v, _ := req.Input[k].(string); return v }
 	if cmd := strings.TrimSpace(str("command")); cmd != "" {
-		return "<code>" + render.Escape(clip(cmd, 200)) + "</code>"
+		code := "<code>" + render.Escape(clip(cmd, 200)) + "</code>"
+		if desc := strings.TrimSpace(str("description")); desc != "" {
+			return render.Escape(clip(desc, 200)) + "\n" + code
+		}
+		return code
 	}
 	s := render.Escape(req.ToolName)
 	if p := str("file_path"); p != "" {

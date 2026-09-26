@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"gopkg.in/yaml.v3"
 )
 
@@ -86,7 +87,7 @@ func (f *File) Resolve(name, project, def string) (string, Profile, error) {
 	}
 	p, ok := f.Profiles[name]
 	if !ok {
-		return "", Profile{}, fmt.Errorf("профиль %q не найден в profiles.yaml", name)
+		return "", Profile{}, errors.New(i18n.T("profiles.not_found", name))
 	}
 	if len(p.SettingSources) == 0 {
 		p.SettingSources = Full.SettingSources

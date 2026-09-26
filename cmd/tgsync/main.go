@@ -22,6 +22,7 @@ import (
 	"github.com/ArthurKrantsevich/tgsync/internal/check"
 	"github.com/ArthurKrantsevich/tgsync/internal/config"
 	"github.com/ArthurKrantsevich/tgsync/internal/group"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/limits"
 	"github.com/ArthurKrantsevich/tgsync/internal/permissions"
 	"github.com/ArthurKrantsevich/tgsync/internal/profiles"
@@ -47,6 +48,8 @@ func main() {
 	}
 	// sudo runs this binary as SUDO_ASKPASS; see package sudo.
 	if os.Getenv("TGSYNC_ASKPASS") == "1" {
+		// The agent inherits the node's environment, BOT_LANGUAGE included.
+		setLanguage()
 		if err := sudo.Askpass(os.Getenv("TGSYNC_ASKPASS_SOCK"), os.Getenv(sudo.TokenVar), os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -100,77 +103,93 @@ func enterHome() error {
 	return os.Chdir(dir)
 }
 
+// loadEnv reads .env and picks the interface language from BOT_LANGUAGE, so
+// even the lines printed before the config is validated are localized.
 func loadEnv() error {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf(".env: %w", err)
 	}
+	setLanguage()
 	return nil
+}
+
+// setLanguage picks the interface language from BOT_LANGUAGE before the
+// config is validated; an invalid value falls back to the default here and
+// is reported by config.Load.
+func setLanguage() {
+	lang, ok := i18n.Parse(os.Getenv("BOT_LANGUAGE"))
+	if !ok {
+		lang = i18n.Default
+	}
+	i18n.Set(lang)
 }
 
 // runCheck diagnoses the installation and exits with an error when anything is wrong.
 func runCheck() error {
 	wd, _ := os.Getwd()
-	fmt.Printf("tgsync %s · папка %s\n", version, wd)
-	if err := loadEnv(); err != nil {
-		return err
+	envErr := loadEnv()
+	fmt.Println(i18n.T("cli.check.header", version, wd))
+	if envErr != nil {
+		return envErr
 	}
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
-		fmt.Printf("✗ конфиг — %v\n", err)
-		return errors.New("исправь .env и запусти check ещё раз")
+		fmt.Println(i18n.T("cli.check.config_bad", err))
+		return errors.New(i18n.T("cli.check.fix_env"))
 	}
-	fmt.Println("✓ конфиг — .env прочитан")
+	i18n.Set(cfg.Language)
+	fmt.Println(i18n.T("cli.check.config_ok"))
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	var checks []check.Check
 	api, err := telegram.NewBot(cfg.BotToken, cfg.GroupChatID, func(context.Context, telegram.Update) {})
 	if err != nil {
-		checks = append(checks, check.Check{Name: "бот", Run: func(context.Context) (string, error) {
-			return "", fmt.Errorf("токен не принят или Telegram недоступен: %v", err)
+		checks = append(checks, check.Check{Name: i18n.T("check.name.bot"), Run: func(context.Context) (string, error) {
+			return "", errors.New(i18n.T("cli.check.bot_token", err))
 		}})
 	} else {
 		checks = append(checks,
-			check.Check{Name: "бот", Run: api.Me},
-			check.Check{Name: "группа с темами", Run: func(ctx context.Context) (string, error) {
+			check.Check{Name: i18n.T("check.name.bot"), Run: api.Me},
+			check.Check{Name: i18n.T("check.name.forum"), Run: func(ctx context.Context) (string, error) {
 				forum, err := api.IsForum(ctx)
 				if err != nil {
-					return "", fmt.Errorf("группа %d недоступна: бот не добавлен или неверный GROUP_CHAT_ID (%v)", cfg.GroupChatID, err)
+					return "", errors.New(i18n.T("cli.check.group_unavailable", cfg.GroupChatID, err))
 				}
 				if !forum {
-					return "", errors.New("в группе не включены темы (Topics)")
+					return "", errors.New(i18n.T("cli.check.no_topics"))
 				}
 				return strconv.FormatInt(cfg.GroupChatID, 10), nil
 			}},
-			check.Check{Name: "права бота", Run: func(ctx context.Context) (string, error) {
+			check.Check{Name: i18n.T("check.name.rights"), Run: func(ctx context.Context) (string, error) {
 				r, err := api.Rights(ctx)
 				if err != nil {
 					return "", err
 				}
 				if !r.ManageTopics {
-					return "", errors.New("сделай бота администратором с правом «Управление темами»")
+					return "", errors.New(i18n.T("cli.check.need_admin"))
 				}
 				var extra []string
 				if !r.PinMessages {
-					extra = append(extra, "«Закрепление сообщений» — для карточки ноды")
+					extra = append(extra, i18n.T("cli.check.right_pin"))
 				}
 				if !r.ChangeInfo {
-					extra = append(extra, "«Изменение профиля группы» — для аватара и описания")
+					extra = append(extra, i18n.T("cli.check.right_info"))
 				}
 				if !r.DeleteMessages {
-					extra = append(extra, "«Удаление сообщений» — для удаления пустых тем и уборки")
+					extra = append(extra, i18n.T("cli.check.right_delete"))
 				}
 				if len(extra) > 0 {
-					return "управление темами есть; стоит добавить " + strings.Join(extra, ", "), nil
+					return i18n.T("cli.check.rights_partial", strings.Join(extra, ", ")), nil
 				}
-				return "администратор, все нужные права", nil
+				return i18n.T("cli.check.rights_ok"), nil
 			}},
 		)
 	}
 	dbDir := filepath.Dir(cfg.DBPath)
 	_ = os.MkdirAll(dbDir, 0o700)
 	checks = append(checks,
-		check.Check{Name: "профили", Run: func(context.Context) (string, error) {
+		check.Check{Name: i18n.T("check.name.profiles"), Run: func(context.Context) (string, error) {
 			f, err := profiles.Load("profiles.yaml")
 			if err != nil {
 				return "", err
@@ -178,34 +197,34 @@ func runCheck() error {
 			if _, _, err := f.Resolve("", "", cfg.DefaultProfile); err != nil {
 				return "", fmt.Errorf("DEFAULT_PROFILE: %v", err)
 			}
-			return strings.Join(f.Names(), ", ") + " (по умолчанию " + cfg.DefaultProfile + ")", nil
+			return i18n.T("cli.check.profiles", strings.Join(f.Names(), ", "), cfg.DefaultProfile), nil
 		}},
 		check.Check{Name: "sudo", Run: func(context.Context) (string, error) {
 			if cfg.SudoUnsupported {
-				return "недоступен на Windows, SUDO_MODE принудительно off", nil
+				return i18n.T("cli.check.sudo_windows"), nil
 			}
 			switch cfg.SudoMode {
 			case "env":
-				return "SUDO_MODE=env: пароль из .env, каждая команда с кнопкой", nil
+				return i18n.T("cli.check.sudo_env"), nil
 			case "telegram":
 				if api == nil {
-					return "", errors.New("SUDO_MODE=telegram: бот недоступен")
+					return "", errors.New(i18n.T("cli.check.sudo_no_bot"))
 				}
 				if r, err := api.Rights(ctx); err != nil || !r.DeleteMessages {
-					return "", errors.New("SUDO_MODE=telegram: дай боту право «Удаление сообщений», иначе пароль останется в чате")
+					return "", errors.New(i18n.T("cli.check.sudo_no_delete"))
 				}
-				return "SUDO_MODE=telegram: пароль спрашивается в теме и удаляется, каждая команда с кнопкой", nil
+				return i18n.T("cli.check.sudo_telegram"), nil
 			}
-			return "SUDO_MODE=off: команды с sudo отклоняются", nil
+			return i18n.T("cli.check.sudo_off"), nil
 		}},
 		check.ClaudeCLI(cfg.ClaudeCLIPath),
 		check.Dir("PROJECTS_ROOT", cfg.ProjectsRoot, true),
-		check.Dir("папка базы", dbDir, true),
+		check.Dir(i18n.T("check.name.db"), dbDir, true),
 	)
 	if !check.Run(ctx, os.Stdout, checks) {
-		return errors.New("есть ошибки, см. строки с ✗")
+		return errors.New(i18n.T("cli.check.failed"))
 	}
-	fmt.Println("Всё в порядке.")
+	fmt.Println(i18n.T("cli.check.ok"))
 	return nil
 }
 
@@ -217,8 +236,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	i18n.Set(cfg.Language)
 	if cfg.SudoUnsupported {
-		slog.Warn("sudo недоступен на Windows, SUDO_MODE принудительно off")
+		slog.Warn("sudo is not available on Windows, SUDO_MODE forced to off")
 	}
 	// Secrets stay in this process only: claude and every tool it runs inherit
 	// the environment. (.env values were set with Setenv, so after Unsetenv
@@ -248,10 +268,10 @@ func run() error {
 	}
 	r, err := api.Rights(ctx)
 	if err != nil {
-		return fmt.Errorf("проверка прав бота в группе %d: %w", cfg.GroupChatID, err)
+		return fmt.Errorf(i18n.T("cli.rights_check"), cfg.GroupChatID, err)
 	}
 	if !r.ManageTopics {
-		return errors.New("бот должен быть администратором группы с правом «Управление темами» (can_manage_topics)")
+		return errors.New(i18n.T("cli.need_admin"))
 	}
 
 	rapi := telegram.NewResilient(api) // retries 429 and network failures
@@ -271,7 +291,7 @@ func run() error {
 	sudoSrv := sudo.NewServer(sockPath, cfg.SudoMode, cfg.SudoPassword, broker.AskPassword)
 	if sudoSrv.Enabled() {
 		if err := sudoSrv.Listen(); err != nil {
-			return fmt.Errorf("sudo: сокет %s: %w", sockPath, err)
+			return fmt.Errorf(i18n.T("cli.sudo_socket"), sockPath, err)
 		}
 		broker.SetSudo(sudoSrv)
 		go func() {
@@ -282,7 +302,7 @@ func run() error {
 	}
 	exe, _ := os.Executable()
 	grp := &group.Group{API: rapi, Store: st, Topics: tp, Avatar: brand.Avatar,
-		Description: brand.GroupDescription, Started: time.Now()}
+		Description: brand.GroupDescription(), Started: time.Now()}
 	// Everything that may post to the control topic (limit notices, /usage)
 	// goes through the tracked API, so the hourly sweep removes it.
 	ctrl := grp.ControlAPI(rapi)
@@ -372,15 +392,16 @@ func runProfile() error {
 	if err != nil {
 		return err
 	}
+	i18n.Set(cfg.Language)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	api, err := telegram.NewBot(cfg.BotToken, cfg.GroupChatID, func(context.Context, telegram.Update) {})
 	if err != nil {
 		return fmt.Errorf("telegram: %w", err)
 	}
-	if err := api.SetProfile(ctx, brand.ShortDescription, brand.Description, brand.Avatar); err != nil {
+	if err := api.SetProfile(ctx, brand.ShortDescription(), brand.Description(), brand.Avatar); err != nil {
 		return err
 	}
-	fmt.Println("Готово: аватар и описание бота обновлены.")
+	fmt.Println(i18n.T("cli.profile_done"))
 	return nil
 }

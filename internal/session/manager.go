@@ -18,6 +18,7 @@ import (
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
 	"github.com/ArthurKrantsevich/tgsync/internal/files"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/permissions"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
@@ -26,12 +27,19 @@ import (
 )
 
 // ErrUnknownSession means the topic has no session on this node.
-var ErrUnknownSession = errors.New("сессия не найдена на этой ноде")
+var ErrUnknownSession error = keyedError("session.err.unknown")
 
 // ErrAlreadyOpen: the Claude session is already open in another topic here.
-var ErrAlreadyOpen = errors.New("эта сессия уже открыта в другой теме")
+var ErrAlreadyOpen error = keyedError("session.err.already_open")
 
-const defaultTitle = "новая сессия"
+// keyedError is a sentinel error whose text is looked up in the current
+// language each time it is shown; it compares equal to itself.
+type keyedError string
+
+func (e keyedError) Error() string { return i18n.T(string(e)) }
+
+// defaultTitle names a topic until its first message gives it a title.
+func defaultTitle() string { return i18n.T("session.default_title") }
 
 var modes = map[string]bool{"default": true, "acceptEdits": true, "plan": true}
 
@@ -110,7 +118,7 @@ type sess struct {
 	restoring    bool                 // ↩ rollback in progress: no turn may start
 	restored     chan struct{}        // closed when the rollback in progress ends
 	idleSince    time.Time            // end of the last turn
-	stallFrom    time.Time            // «Ждать» pressed: the next stall warning counts from here
+	stallFrom    time.Time            // "Wait" pressed: the next stall warning counts from here
 	warned       bool                 // stall warning sent for the current quiet period
 	overtime     bool                 // MAX_TURN_DURATION already enforced in this turn
 	initShown    bool                 // plugin summary already posted
@@ -182,7 +190,7 @@ func (m *Manager) Restore(ctx context.Context) error {
 		case store.StateIdle, store.StateFailed, store.StateInterrupted:
 		default:
 			m.setState(ctx, s, store.StateInterrupted)
-			m.say(ctx, s, "⏸ Нода перезапустилась во время хода. Напиши сообщение, чтобы продолжить.", false)
+			m.say(ctx, s, i18n.T("session.node_restarted"), false)
 		}
 	}
 	return nil
@@ -203,13 +211,13 @@ func (m *Manager) NewWithProfile(ctx context.Context, project, dir, task, profil
 		}
 		profile = name
 	}
-	title := defaultTitle
+	title := defaultTitle()
 	if strings.TrimSpace(task) != "" {
 		title = shortTitle(task)
 	}
 	thread, err := m.d.Topics.CreateSession(ctx, project, title)
 	if err != nil {
-		return 0, fmt.Errorf("создать topic: %w", err)
+		return 0, fmt.Errorf("%s: %w", i18n.T("session.err.create_topic"), err)
 	}
 	row := store.SessionRow{ThreadID: thread, Project: project, Cwd: dir, Title: title, State: store.StateIdle, Mode: "default", Profile: profile}
 	if err := m.d.Store.CreateSession(ctx, &row); err != nil {
@@ -220,10 +228,10 @@ func (m *Manager) NewWithProfile(ctx context.Context, project, dir, task, profil
 	m.sessions[thread] = s
 	m.mu.Unlock()
 	if profile != "" && profile != "full" {
-		m.say(ctx, s, "🧩 профиль "+render.Escape(profile), true)
+		m.say(ctx, s, i18n.T("session.profile", render.Escape(profile)), true)
 	}
 	if strings.TrimSpace(task) == "" {
-		m.say(ctx, s, "🧵 Сессия готова. Напиши задачу — агент начнёт работу. Подсказки: /help", false)
+		m.say(ctx, s, i18n.T("session.ready"), false)
 		return thread, nil
 	}
 	return thread, m.Message(ctx, thread, task)
@@ -234,7 +242,7 @@ func (m *Manager) NewWithProfile(ctx context.Context, project, dir, task, profil
 // session that is still running elsewhere is left untouched.
 func (m *Manager) Attach(ctx context.Context, project, dir, sessionID, title string, fork bool) (int, error) {
 	if title = shortTitle(title); title == "" {
-		title = defaultTitle
+		title = defaultTitle()
 	}
 	if !fork {
 		// Two topics resuming one transcript would interleave it: the id is
@@ -259,7 +267,7 @@ func (m *Manager) Attach(ctx context.Context, project, dir, sessionID, title str
 	}
 	thread, err := m.d.Topics.CreateSession(ctx, project, title)
 	if err != nil {
-		return 0, fmt.Errorf("создать topic: %w", err)
+		return 0, fmt.Errorf("%s: %w", i18n.T("session.err.create_topic"), err)
 	}
 	row := store.SessionRow{ThreadID: thread, Project: project, Cwd: dir, Title: title,
 		ClaudeSessionID: sessionID, State: store.StateIdle, Mode: "default"}
@@ -313,13 +321,13 @@ func (m *Manager) MessageFrom(ctx context.Context, thread int, text string, msgI
 	}
 	item := text
 	if len(s.inbox2) > 0 {
-		item = "Пользователь прислал файлы (прочитай, если нужно для задачи):\n- " + strings.Join(s.inbox2, "\n- ") + "\n\n" + text
+		item = "The user sent files (read them if the task needs them):\n- " + strings.Join(s.inbox2, "\n- ") + "\n\n" + text
 		s.inbox2 = nil
 	}
 	m.itemSeq++
 	it := &inboxItem{id: m.itemSeq, text: item, msg: msgID}
 	s.inbox = append(s.inbox, it)
-	renamed := s.row.Title == defaultTitle
+	renamed := i18n.Any("session.default_title", s.row.Title)
 	if renamed {
 		s.row.Title = shortTitle(text)
 	}
@@ -367,7 +375,7 @@ func (m *Manager) schedule(ctx context.Context) {
 		}
 		if m.safely("startTurn", run, func() { m.startTurn(ctx, run) }) {
 			m.safely("startTurn recovery", run, func() {
-				m.say(ctx, run, internalError+" Напиши сообщение, чтобы продолжить.", false)
+				m.say(ctx, run, i18n.T("session.internal_error_continue"), false)
 				m.failTurn(ctx, run)
 			})
 		}
@@ -469,7 +477,7 @@ func (m *Manager) startTurn(ctx context.Context, s *sess) {
 			Tools:              []agent.Tool{m.sendFileTool(s)},
 		})
 		if err != nil {
-			m.abortTurn(ctx, s, it, "❌ Не удалось запустить claude: "+render.Escape(err.Error()))
+			m.abortTurn(ctx, s, it, i18n.T("session.start_failed", render.Escape(err.Error())))
 			return
 		}
 		m.mu.Lock()
@@ -519,7 +527,7 @@ func (m *Manager) startTurn(ctx context.Context, s *sess) {
 		s.turnNo--
 		s.turnBase = prevBase
 		m.mu.Unlock()
-		m.abortTurn(ctx, s, it, "❌ Не удалось отправить сообщение агенту: "+render.Escape(err.Error()))
+		m.abortTurn(ctx, s, it, i18n.T("session.send_failed", render.Escape(err.Error())))
 		return
 	}
 	if note != "" {
@@ -546,7 +554,7 @@ func (m *Manager) abortTurn(ctx context.Context, s *sess, it *inboxItem, html st
 		_ = m.d.API.DeleteMessage(ctx, statusMsg)
 	}
 	m.endReaction(ctx, s)
-	m.say(ctx, s, html+"\nСообщение сохранено и уйдёт вместе со следующим.", false)
+	m.say(ctx, s, i18n.T("session.message_kept", html), false)
 	m.setState(ctx, s, store.StateFailed)
 }
 
@@ -567,7 +575,7 @@ func (m *Manager) readEvents(s *sess, a agent.Session) {
 		if current { // the turn belongs to this process: it is gone now
 			ctx := context.Background()
 			m.safely("readEvents recovery", s, func() {
-				m.say(ctx, s, internalError, false)
+				m.say(ctx, s, internalError(), false)
 				m.failTurn(ctx, s)
 				m.schedule(ctx)
 			})
@@ -613,7 +621,7 @@ func (m *Manager) readEvents(s *sess, a agent.Session) {
 		}
 		m.endReaction(ctx, s)
 		m.sayPending(ctx, s)
-		m.say(ctx, s, "❌ Процесс claude завершился во время хода. Напиши сообщение, чтобы продолжить.", false)
+		m.say(ctx, s, i18n.T("session.claude_exited"), false)
 		m.setState(ctx, s, store.StateFailed)
 	}
 	m.schedule(ctx)
@@ -1128,18 +1136,18 @@ func (m *Manager) Stop(ctx context.Context, thread int) error {
 		return ErrUnknownSession
 	}
 	if a == nil || !busy {
-		m.say(ctx, s, "Сейчас ничего не выполняется.", true)
+		m.say(ctx, s, i18n.T("session.nothing_running"), true)
 		return nil
 	}
 	if err := m.interrupt(ctx, s, a); err != nil {
 		return err
 	}
-	m.say(ctx, s, "⏹ Прерываю ход…", true)
+	m.say(ctx, s, i18n.T("session.interrupting"), true)
 	m.mu.Lock()
 	n := m.runningAgents(s)
 	m.mu.Unlock()
 	if n > 0 {
-		m.say(ctx, s, fmt.Sprintf("🤖 Агенты ещё работают: %d. Остановить можно в панели (/agents).", n), true)
+		m.say(ctx, s, i18n.T("session.agents_running", n), true)
 	}
 	return nil
 }
@@ -1147,7 +1155,7 @@ func (m *Manager) Stop(ctx context.Context, thread int) error {
 // SetMode changes the permission mode of the session.
 func (m *Manager) SetMode(ctx context.Context, thread int, mode string) error {
 	if !modes[mode] {
-		return errors.New("режим: default, acceptEdits или plan")
+		return errors.New(i18n.T("session.err.mode"))
 	}
 	m.mu.Lock()
 	s := m.sessions[thread]
@@ -1168,7 +1176,7 @@ func (m *Manager) SetMode(ctx context.Context, thread int, mode string) error {
 	row := s.row
 	m.mu.Unlock()
 	m.save(ctx, row)
-	m.say(ctx, s, "🔧 Режим разрешений: <b>"+mode+"</b>", true)
+	m.say(ctx, s, i18n.T("session.mode_changed", mode), true)
 	return nil
 }
 
@@ -1204,7 +1212,7 @@ func (m *Manager) Close(ctx context.Context, thread int) error {
 		_ = a.Close()
 	}
 	m.d.Broker.CancelThread(ctx, thread)
-	m.say(ctx, s, "✅ Сессия закрыта.", true)
+	m.say(ctx, s, i18n.T("session.closed"), true)
 	m.setState(ctx, s, store.StateClosed)
 	m.schedule(ctx)
 	return nil
@@ -1282,8 +1290,9 @@ const telegramPrompt = "You are driven from Telegram. When the user should read 
 	"The user reads your replies on a phone and only your last message of a turn is posted in full: " +
 	"make it short and lead with the outcome. Skip recaps of the steps you took, " +
 	"and keep remarks between tool calls to one line or leave them out. " +
-	"The user approves commands in Telegram and sees the Bash description next to the command: " +
-	"write it in the user's language and say briefly why you run the command and what it gives you."
+	"The user follows your progress by the Bash description, shown instead of the command " +
+	"and next to it when approval is needed: write it for every command, in the user's language, " +
+	"as what you do and why, e.g. \"Searching the spec for the language setting to extend it\"."
 
 // sudoPrompt tells the agent that sudo works through Telegram approval;
 // without it the agent probes with sudo -n and gives up.
@@ -1305,7 +1314,7 @@ func (m *Manager) sendFileTool(s *sess) agent.Tool {
 			defer func() {
 				if r := recover(); r != nil {
 					m.crashed("send_file", s, r)
-					out, err = "", errors.New("tgsync: внутренняя ошибка при отправке файла")
+					out, err = "", errors.New(i18n.T("session.tool.internal_error"))
 				}
 			}()
 			p, _ := args["path"].(string)
@@ -1315,9 +1324,9 @@ func (m *Manager) sendFileTool(s *sess) agent.Tool {
 			case err != nil:
 				return "", err
 			case !sent:
-				return "Эта версия файла уже была отправлена пользователю.", nil
+				return i18n.T("session.tool.already_sent"), nil
 			}
-			return "Файл отправлен пользователю.", nil
+			return i18n.T("session.tool.sent"), nil
 		},
 	}
 }
@@ -1356,7 +1365,7 @@ func (m *Manager) deliverFiles(ctx context.Context, s *sess, text string, change
 	defer func() {
 		if r := recover(); r != nil {
 			m.crashed("deliverFiles", s, r)
-			m.safely("deliverFiles recovery", s, func() { m.say(ctx, s, internalError+" Сводка хода не собрана.", true) })
+			m.safely("deliverFiles recovery", s, func() { m.say(ctx, s, i18n.T("session.internal_error_summary"), true) })
 		}
 	}()
 	seen := map[string]bool{}
@@ -1387,7 +1396,7 @@ func (m *Manager) deliverFiles(ctx context.Context, s *sess, text string, change
 	}
 	const maxListed = 10
 	stats := m.turnStats(ctx, s, turn, changed)
-	header := fmt.Sprintf("📎 Изменено за ход: %d", len(changed))
+	header := i18n.T("session.changed", len(changed))
 	if stats != nil {
 		add, del := 0, 0
 		for _, st := range stats {
@@ -1399,7 +1408,7 @@ func (m *Manager) deliverFiles(ctx context.Context, s *sess, text string, change
 	var kb telegram.Keyboard
 	for i, rel := range changed {
 		if i == maxListed {
-			lines = append(lines, fmt.Sprintf("…и ещё %d", len(changed)-maxListed))
+			lines = append(lines, i18n.T("session.more", len(changed)-maxListed))
 			break
 		}
 		mark := ""
@@ -1447,7 +1456,7 @@ func (m *Manager) HandleFileButton(ctx context.Context, u telegram.Update) (stri
 	s := m.sessions[ref.thread]
 	m.mu.Unlock()
 	if !known || s == nil || ref.thread != u.ThreadID {
-		return "Кнопка устарела", true
+		return i18n.T("session.button_expired"), true
 	}
 	if _, err := m.sendFile(ctx, s, ref.rel, "", true); err != nil {
 		return alertText(err), true
@@ -1470,7 +1479,7 @@ func (m *Manager) SendFile(ctx context.Context, thread int, p string) error {
 		return ErrUnknownSession
 	}
 	if strings.TrimSpace(p) == "" {
-		return errors.New("укажи путь: /file docs/plan.md")
+		return errors.New(i18n.T("session.err.file_path"))
 	}
 	_, err := m.sendFile(ctx, s, strings.TrimSpace(p), "", true)
 	return err
@@ -1550,8 +1559,8 @@ func (m *Manager) notifyTimers(ctx context.Context, now time.Time, stalled []sta
 	}()
 	for _, st := range stalled {
 		key := strconv.Itoa(st.s.row.ThreadID)
-		kb := telegram.Keyboard{{{Text: "⏳ Ждать", Data: "w:" + key}, {Text: "⏹ Остановить", Data: "x:" + key}}}
-		text := fmt.Sprintf("⏳ Нет активности %s. Агент может ждать долгую команду.", render.Duration(st.quiet))
+		kb := telegram.Keyboard{{{Text: i18n.T("session.btn.wait"), Data: "w:" + key}, {Text: i18n.T("session.btn.stop"), Data: "x:" + key}}}
+		text := i18n.T("session.stall", render.Duration(st.quiet))
 		if _, err := m.d.API.SendMessage(ctx, st.s.row.ThreadID, text, kb, false); err != nil {
 			m.telegramFailed(st.s, "stall warning", err)
 		}
@@ -1566,12 +1575,12 @@ func (m *Manager) notifyTimers(ctx context.Context, now time.Time, stalled []sta
 				m.mu.Lock()
 				s.overtime = false // tick tries again once retryAt has passed
 				m.mu.Unlock()
-				m.say(ctx, s, fmt.Sprintf("⚠️ Ход идёт дольше MAX_TURN_DURATION (%s), но прервать его не удалось: %s. Попробую снова через минуту.",
+				m.say(ctx, s, i18n.T("session.overtime_failed",
 					render.Duration(m.d.MaxTurn), render.Escape(err.Error())), false)
 				continue
 			}
 		}
-		m.say(ctx, s, fmt.Sprintf("⏱ Ход идёт дольше MAX_TURN_DURATION (%s), прерываю.", render.Duration(m.d.MaxTurn)), false)
+		m.say(ctx, s, i18n.T("session.overtime", render.Duration(m.d.MaxTurn)), false)
 	}
 	m.d.Broker.Remind(ctx, now, m.d.RemindEvery)
 }
@@ -1592,7 +1601,7 @@ func (m *Manager) HandleButton(ctx context.Context, u telegram.Update) (string, 
 		s := m.sessions[ref.thread]
 		m.mu.Unlock()
 		if !known || !ref.dir || s == nil || ref.thread != u.ThreadID {
-			return "Кнопка устарела", true
+			return i18n.T("session.button_expired"), true
 		}
 		if err := m.showDir(ctx, s, ref.rel, ref.offset, u.MessageID); err != nil {
 			return alertText(err), true
@@ -1609,24 +1618,24 @@ func (m *Manager) HandleButton(ctx context.Context, u telegram.Update) (string, 
 			return "", false
 		}
 		if thread != u.ThreadID {
-			return "Кнопка устарела", true
+			return i18n.T("session.button_expired"), true
 		}
 		return m.sessionAction(ctx, kind, thread, u.MessageID), true
 	case "ms":
 		ts, mode, _ := strings.Cut(key, ":")
 		thread, err := strconv.Atoi(ts)
 		if err != nil || thread != u.ThreadID {
-			return "Кнопка устарела", true
+			return i18n.T("session.button_expired"), true
 		}
 		if err := m.SetMode(ctx, thread, mode); err != nil {
 			return alertText(err), true
 		}
-		_ = m.d.API.EditMessage(ctx, u.MessageID, "⚙ Режим разрешений: <b>"+render.Escape(mode)+"</b>", nil)
+		_ = m.d.API.EditMessage(ctx, u.MessageID, i18n.T("session.mode_changed", render.Escape(mode)), nil)
 		return "", true
 	case "qn":
 		item, err := strconv.Atoi(key)
 		if err != nil {
-			return "Кнопка устарела", true
+			return i18n.T("session.button_expired"), true
 		}
 		return m.sendNow(ctx, u.ThreadID, item, u.MessageID), true
 	case "ag":
@@ -1634,7 +1643,7 @@ func (m *Manager) HandleButton(ctx context.Context, u telegram.Update) (string, 
 	case "cx":
 		thread, err := strconv.Atoi(key)
 		if err != nil || thread != u.ThreadID {
-			return "Кнопка устарела", true
+			return i18n.T("session.button_expired"), true
 		}
 		alert, err := m.compact(ctx, thread)
 		if err != nil {
@@ -1644,7 +1653,7 @@ func (m *Manager) HandleButton(ctx context.Context, u telegram.Update) (string, 
 	case "w", "x":
 		thread, err := strconv.Atoi(key)
 		if err != nil || thread != u.ThreadID {
-			return "Кнопка устарела", true
+			return i18n.T("session.button_expired"), true
 		}
 		if kind == "x" {
 			if err := m.Stop(ctx, thread); err != nil {
@@ -1657,7 +1666,7 @@ func (m *Manager) HandleButton(ctx context.Context, u telegram.Update) (string, 
 			s.stallFrom, s.warned = m.d.Now(), false
 		}
 		m.mu.Unlock()
-		return "Жду дальше", true
+		return i18n.T("session.waiting_longer"), true
 	}
 	return "", false
 }
@@ -1673,7 +1682,7 @@ func initSummary(in *agent.InitInfo) string {
 	if len(bad) == 0 {
 		return ""
 	}
-	return "🔌 MCP: " + strings.Join(bad, ", ") + "\nАвторизуй их в интерактивном claude: в сессиях бота OAuth не пройти."
+	return i18n.T("session.mcp_failed", strings.Join(bad, ", "))
 }
 
 // Skills posts the slash commands the agent offers (from the last init).
@@ -1689,7 +1698,7 @@ func (m *Manager) Skills(ctx context.Context, thread int) error {
 		return ErrUnknownSession
 	}
 	if len(cmds) == 0 {
-		m.say(ctx, s, "Список команд появится после первого ответа агента.", true)
+		m.say(ctx, s, i18n.T("session.commands_later"), true)
 		return nil
 	}
 	sort.Strings(cmds)
@@ -1697,7 +1706,7 @@ func (m *Manager) Skills(ctx context.Context, thread int) error {
 	for i, c := range cmds {
 		lines[i] = "/" + c
 	}
-	for _, chunk := range render.Chunks(fmt.Sprintf("Команд агента: %d. Любую можно отправить сообщением.\n", len(cmds)) + strings.Join(lines, "\n")) {
+	for _, chunk := range render.Chunks(i18n.T("session.commands", len(cmds)) + "\n" + strings.Join(lines, "\n")) {
 		m.say(ctx, s, chunk, true)
 	}
 	return nil
@@ -1728,7 +1737,7 @@ func (m *Manager) ReceiveFile(ctx context.Context, thread int, name string, data
 	s.inbox2 = append(s.inbox2, entry)
 	m.mu.Unlock()
 	if strings.TrimSpace(caption) == "" {
-		m.say(ctx, s, "📎 Получен <code>"+render.Escape(inboxDir+"/"+fname)+"</code>, передам со следующим сообщением.", true)
+		m.say(ctx, s, i18n.T("session.file_received", render.Escape(inboxDir+"/"+fname)), true)
 		return nil
 	}
 	return m.Message(ctx, thread, caption)
@@ -1765,7 +1774,7 @@ var hiddenDirs = map[string]bool{".git": true, "node_modules": true, ".venv": tr
 const lsPage = 30
 
 // maxListings and maxTurnSummaries cap the buttons kept per session: older
-// /ls messages and turn summaries answer «Кнопка устарела».
+// /ls messages and turn summaries answer "Button expired".
 const (
 	maxListings      = 5
 	maxTurnSummaries = 5
@@ -1818,7 +1827,7 @@ func (m *Manager) showDir(ctx context.Context, s *sess, rel string, offset, edit
 		text += fmt.Sprintf(" · %d–%d", offset+1, end)
 	}
 	if len(all) == 0 {
-		text += "\nПапка пуста."
+		text += "\n" + i18n.T("session.folder_empty")
 	}
 	var kb telegram.Keyboard
 	m.mu.Lock()
@@ -1851,7 +1860,7 @@ func (m *Manager) showDir(ctx context.Context, s *sess, rel string, offset, edit
 		nav = append(nav, telegram.Button{Text: "⬆ ..", Data: "l:" + ref(fileRef{thread: s.row.ThreadID, rel: parent, dir: true})})
 	}
 	if end < len(all) {
-		nav = append(nav, telegram.Button{Text: "➡ ещё", Data: "l:" + ref(fileRef{thread: s.row.ThreadID, rel: rel, dir: true, offset: end})})
+		nav = append(nav, telegram.Button{Text: i18n.T("session.btn.more"), Data: "l:" + ref(fileRef{thread: s.row.ThreadID, rel: rel, dir: true, offset: end})})
 	}
 	m.keepListing(s, page)
 	m.mu.Unlock()
@@ -1898,8 +1907,8 @@ func (m *Manager) dropKeys(keys []string) {
 // queueNotice tells that a message waits for the current turn and offers to
 // send it right away. The notice is deleted when the message's turn starts.
 func (m *Manager) queueNotice(ctx context.Context, s *sess, it *inboxItem) {
-	kb := telegram.Keyboard{{{Text: "⚡ Отправить сейчас", Data: "qn:" + strconv.Itoa(it.id)}}}
-	id, err := m.d.API.SendMessage(ctx, s.row.ThreadID, "📥 В очереди, уйдёт следующим ходом.", kb, true)
+	kb := telegram.Keyboard{{{Text: i18n.T("session.btn.send_now"), Data: "qn:" + strconv.Itoa(it.id)}}}
+	id, err := m.d.API.SendMessage(ctx, s.row.ThreadID, i18n.T("session.queued"), kb, true)
 	if err != nil {
 		m.telegramFailed(s, "send queue notice", err)
 		return
@@ -1935,21 +1944,21 @@ func (m *Manager) sendNow(ctx context.Context, thread, item, notice int) string 
 	}
 	m.mu.Unlock()
 	if it == nil {
-		return "Уже отправлено"
+		return i18n.T("session.already_sent")
 	}
 	if a == nil || !busy {
-		_ = m.d.API.EditMessage(ctx, notice, "📥 Уйдёт первым.", nil)
+		_ = m.d.API.EditMessage(ctx, notice, i18n.T("session.goes_first"), nil)
 		return ""
 	}
 	if err := m.interrupt(ctx, s, a); err != nil {
 		return alertText(err)
 	}
-	_ = m.d.API.EditMessage(ctx, notice, "⚡ Прерываю ход, отправляю…", nil)
+	_ = m.d.API.EditMessage(ctx, notice, i18n.T("session.interrupt_sending"), nil)
 	return ""
 }
 
 func stopKeyboard(thread int) telegram.Keyboard {
-	return telegram.Keyboard{{{Text: "⏹ Остановить", Data: "x:" + strconv.Itoa(thread)}}}
+	return telegram.Keyboard{{{Text: i18n.T("session.btn.stop"), Data: "x:" + strconv.Itoa(thread)}}}
 }
 
 // resultKeyboard is the panel under a finished turn.
@@ -1962,17 +1971,15 @@ func (m *Manager) resultKeyboard(s *sess) telegram.Keyboard {
 func panelKeyboard(thread int) telegram.Keyboard {
 	t := strconv.Itoa(thread)
 	return telegram.Keyboard{{
-		{Text: "📂 Файлы", Data: "ls:" + t},
-		{Text: "⚙ Режим", Data: "md:" + t},
-		{Text: "✖ Закрыть", Data: "cl:" + t},
+		{Text: i18n.T("session.btn.files"), Data: "ls:" + t},
+		{Text: i18n.T("session.btn.mode"), Data: "md:" + t},
+		{Text: i18n.T("session.btn.close"), Data: "cl:" + t},
 	}}
 }
 
-var modeHelp = []struct{ mode, text string }{
-	{"default", "default — опасные действия спрашивают разрешение"},
-	{"acceptEdits", "acceptEdits — правки файлов без вопросов"},
-	{"plan", "plan — только план, без изменений"},
-}
+// modeHelp lists the permission modes in picker order; each label is the
+// catalog entry "session.mode.<mode>".
+var modeHelp = []string{"default", "acceptEdits", "plan"}
 
 // sessionAction handles the panel buttons: mode picker and close with confirmation.
 func (m *Manager) sessionAction(ctx context.Context, kind string, thread, msgID int) string {
@@ -1984,7 +1991,7 @@ func (m *Manager) sessionAction(ctx context.Context, kind string, thread, msgID 
 	}
 	m.mu.Unlock()
 	if s == nil {
-		return "Сессия уже закрыта"
+		return i18n.T("session.already_closed")
 	}
 	t := strconv.Itoa(thread)
 	switch kind {
@@ -1998,17 +2005,17 @@ func (m *Manager) sessionAction(ctx context.Context, kind string, thread, msgID 
 		}
 	case "md":
 		var kb telegram.Keyboard
-		for _, h := range modeHelp {
-			kb = append(kb, []telegram.Button{{Text: h.text, Data: "ms:" + t + ":" + h.mode}})
+		for _, md := range modeHelp {
+			kb = append(kb, []telegram.Button{{Text: i18n.T("session.mode." + md), Data: "ms:" + t + ":" + md}})
 		}
-		_, _ = m.d.API.SendMessage(ctx, thread, "⚙ Режим разрешений сейчас: <b>"+render.Escape(mode)+"</b>. Выбери новый:", kb, true)
+		_, _ = m.d.API.SendMessage(ctx, thread, i18n.T("session.mode_pick", render.Escape(mode)), kb, true)
 	case "cl":
-		kb := telegram.Keyboard{{{Text: "Да, закрыть", Data: "cy:" + t}, {Text: "Отмена", Data: "cn:" + t}}}
-		_, _ = m.d.API.SendMessage(ctx, thread, "Закрыть сессию? Процесс остановится, тема закроется. Продолжить её потом можно через /history.", kb, true)
+		kb := telegram.Keyboard{{{Text: i18n.T("session.btn.close_yes"), Data: "cy:" + t}, {Text: i18n.T("session.btn.close_cancel"), Data: "cn:" + t}}}
+		_, _ = m.d.API.SendMessage(ctx, thread, i18n.T("session.close_confirm"), kb, true)
 	case "cn":
-		_ = m.d.API.EditMessage(ctx, msgID, "Сессия остаётся открытой.", nil)
+		_ = m.d.API.EditMessage(ctx, msgID, i18n.T("session.stays_open"), nil)
 	case "cy":
-		_ = m.d.API.EditMessage(ctx, msgID, "Закрываю сессию.", nil)
+		_ = m.d.API.EditMessage(ctx, msgID, i18n.T("session.closing"), nil)
 		if err := m.Close(ctx, thread); err != nil {
 			return alertText(err)
 		}

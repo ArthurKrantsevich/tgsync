@@ -27,16 +27,77 @@ func TestApproveModeDefaultsToAsk(t *testing.T) {
 	}
 }
 
-func TestApproveAllAllowsCommandWithNote(t *testing.T) {
+func TestApproveAllQuietForSafeCommand(t *testing.T) {
 	f := newFixture(t)
 	f.setMode(t, ApproveAll)
-	d := decision(t, f.ask(context.Background(), "Bash", map[string]any{"command": "make build"}))
+	d := decision(t, f.ask(context.Background(), "Bash", map[string]any{"command": "make build", "description": "Собираю проект"}))
+	if !d.Allow {
+		t.Fatalf("decision: %+v", d)
+	}
+	if msgs := f.api.Messages(thread); len(msgs) != 0 {
+		t.Fatalf("safe command posted a note: %+v", msgs)
+	}
+}
+
+func TestApproveAllNotesDestructiveCommand(t *testing.T) {
+	f := newFixture(t)
+	f.setMode(t, ApproveAll)
+	d := decision(t, f.ask(context.Background(), "Bash", map[string]any{"command": "rm -rf build", "description": "Удаляю старую сборку"}))
 	if !d.Allow {
 		t.Fatalf("decision: %+v", d)
 	}
 	msgs := f.api.Messages(thread)
-	if len(msgs) != 1 || !strings.Contains(msgs[0].HTML, "✅ авто: <code>make build</code>") || msgs[0].Keyboard != nil || !msgs[0].Silent {
+	if len(msgs) != 1 || msgs[0].Keyboard != nil || !msgs[0].Silent ||
+		!strings.Contains(msgs[0].HTML, "✅ авто: Удаляю старую сборку") || !strings.Contains(msgs[0].HTML, "<code>rm -rf build</code>") {
 		t.Fatalf("messages: %+v", msgs)
+	}
+}
+
+func TestApproveAllQuietForFileOutsideProject(t *testing.T) {
+	f := newFixture(t)
+	f.setMode(t, ApproveAll)
+	d := decision(t, f.ask(context.Background(), "Write", map[string]any{"file_path": osPath("/etc/demo.conf"), "content": "x"}))
+	if !d.Allow {
+		t.Fatalf("decision: %+v", d)
+	}
+	if msgs := f.api.Messages(thread); len(msgs) != 0 {
+		t.Fatalf("file write posted a note: %+v", msgs)
+	}
+}
+
+func TestDestructive(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"make build":                      false,
+		"go test ./... && git status":     false,
+		"git log --oneline | head":        false,
+		"grep -rn foo . > out.txt":        false,
+		"docker ps":                       false,
+		"rm -rf build":                    true,
+		"cd x && rm a":                    true,
+		"git push origin main":            true,
+		"git reset --hard HEAD~1":         true,
+		"git clean -fdx":                  true,
+		"git checkout -- .":               true,
+		"git branch -D old":               true,
+		"git stash drop":                  true,
+		"docker system prune -f":          true,
+		"docker rm web":                   true,
+		"kill -9 123":                     true,
+		"find . -name '*.tmp' -delete":    true,
+		`find . -exec rm {} \;`:           true,
+		"bash -c 'echo hi'":               true,
+		"echo x | xargs rm":               true,
+		"mv a b":                          true,
+		"systemctl --user restart tgsync": true,
+		"truncate -s0 log":                true,
+		"$(echo rm) x":                    true,
+		"if then fi (":                    true,
+		"echo $(rm -rf /tmp/x)":           true,
+		`\rm x`:                           true,
+	} {
+		if got := destructive(cmd); got != want {
+			t.Errorf("destructive(%q) = %v, want %v", cmd, got, want)
+		}
 	}
 }
 

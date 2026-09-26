@@ -4,6 +4,27 @@ $ErrorActionPreference = 'Stop'
 $TaskName = 'tgsync'
 $BinDir = Join-Path $env:LOCALAPPDATA 'tgsync\bin'
 $Bin = Join-Path $BinDir 'tgsync.exe'
+$Conf = Join-Path $env:APPDATA 'tgsync'
+
+# Interface language of the messages below: BOT_LANGUAGE from the environment,
+# else the last BOT_LANGUAGE= line of the node's .env, else en.
+function Get-UiLang([string[]]$Files) {
+    $v = $env:BOT_LANGUAGE
+    foreach ($f in $Files) {
+        if ($v) { break }
+        if (Test-Path -LiteralPath $f -PathType Leaf) {
+            $line = Get-Content -LiteralPath $f -ErrorAction SilentlyContinue |
+                Where-Object { $_ -match '^\s*(export\s+)?BOT_LANGUAGE\s*=' } | Select-Object -Last 1
+            if ($line) { $v = (($line -replace '^[^=]*=', '') -replace '#.*', '') -replace "[\s`"']", '' }
+        }
+    }
+    if ($v -and $v.Trim() -ieq 'ru') { 'ru' } else { 'en' }
+}
+# Msg "English" "Русский" prints the line in the interface language.
+function Msg([string]$En, [string]$Ru) {
+    if ($script:UiLang -eq 'ru') { Write-Host $Ru } else { Write-Host $En }
+}
+$UiLang = Get-UiLang @(Join-Path $Conf '.env')
 
 # Stop-ScheduledTask ends only the powershell.exe wrapper of the task: its
 # tgsync.exe child keeps running (and keeps the binary locked), and a wrapper
@@ -30,6 +51,7 @@ Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Silent
 $unlocked = Stop-Node $Bin
 Remove-Item $BinDir -Recurse -Force -ErrorAction SilentlyContinue
 if (-not $unlocked -or (Test-Path $Bin)) {
-    Write-Host "! Не удалось удалить ${Bin}: файл занят. Закрой tgsync и удали папку вручную."
+    Msg "! Could not remove ${Bin}: the file is in use. Close tgsync and delete the folder manually." `
+        "! Не удалось удалить ${Bin}: файл занят. Закрой tgsync и удали папку вручную."
 }
-Write-Host "Задача удалена. Конфиг и база остались в $(Join-Path $env:APPDATA 'tgsync')"
+Msg "Task removed. Configuration and database remain in $Conf" "Задача удалена. Конфиг и база остались в $Conf"
