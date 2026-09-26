@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	claude "github.com/ProjAnvil/claude-agent-sdk-golang"
 )
 
@@ -125,7 +127,7 @@ func safeConvert(msg claude.Message) (evs []Event) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("panic converting a claude message", "type", fmt.Sprintf("%T", msg), "panic", r, "stack", string(debug.Stack()))
-			evs = []Event{{Kind: EventError, Err: fmt.Errorf("tgsync: сообщение claude пропущено из-за внутренней ошибки: %v", r)}}
+			evs = []Event{{Kind: EventError, Err: errors.New(i18n.T("agent.convert_panic", r))}}
 		}
 	}()
 	return convert(msg)

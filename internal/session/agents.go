@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
@@ -207,7 +208,7 @@ func (m *Manager) panelView(p *agentPanel, now time.Time) (string, telegram.Keyb
 	}
 	caller := ""
 	if a.parent != "" {
-		caller = "другой субагент"
+		caller = i18n.T("session.agents.other_subagent")
 		for _, x := range p.agents {
 			if x.toolUseID == a.parent {
 				caller = x.name
@@ -221,11 +222,11 @@ func (m *Manager) panelView(p *agentPanel, now time.Time) (string, telegram.Keyb
 	text := render.AgentCard(render.AgentCardInfo{Name: a.name, Description: a.desc, State: a.state, Caller: caller,
 		Action: action, Summary: a.summary, Started: a.started, Took: a.took, ToolUses: a.toolUses}, now)
 	key := "ag:" + strconv.Itoa(a.n) + ":"
-	row := []telegram.Button{{Text: "⬅ Назад", Data: key + "b"}}
+	row := []telegram.Button{{Text: i18n.T("session.agents.btn_back"), Data: key + "b"}}
 	if a.state == "running" {
-		row = append(row, telegram.Button{Text: "⏹ Остановить", Data: key + "s"})
+		row = append(row, telegram.Button{Text: i18n.T("session.btn.stop"), Data: key + "s"})
 	} else {
-		row = append(row, telegram.Button{Text: "📄 Результат", Data: key + "o"})
+		row = append(row, telegram.Button{Text: i18n.T("session.agents.btn_result"), Data: key + "o"})
 	}
 	return text, telegram.Keyboard{row}
 }
@@ -449,7 +450,7 @@ func lastAssistantTextFrom(r io.Reader, cut bool) (string, error) {
 		return "", err
 	}
 	if last == "" {
-		return "", errors.New("в журнале агента нет ответа")
+		return "", errors.New("no answer in the agent transcript")
 	}
 	return last, nil
 }
@@ -459,7 +460,7 @@ func lastAssistantTextFrom(r io.Reader, cut bool) (string, error) {
 func (m *Manager) HandleAgentButton(ctx context.Context, u telegram.Update) string {
 	parts := strings.Split(u.CallbackData, ":")
 	if len(parts) != 3 {
-		return "Кнопка устарела"
+		return i18n.T("session.button_expired")
 	}
 	n, err := strconv.Atoi(parts[1])
 	m.mu.Lock()
@@ -474,7 +475,7 @@ func (m *Manager) HandleAgentButton(ctx context.Context, u telegram.Update) stri
 	}
 	m.mu.Unlock()
 	if err != nil || !ok || s == nil || ref.thread != u.ThreadID {
-		return "Кнопка устарела"
+		return i18n.T("session.button_expired")
 	}
 	switch parts[2] {
 	case "c", "b":
@@ -490,15 +491,15 @@ func (m *Manager) HandleAgentButton(ctx context.Context, u telegram.Update) stri
 		return ""
 	case "s":
 		if st.state != "running" {
-			return "Агент уже завершён"
+			return i18n.T("session.agents.already_done")
 		}
 		if a == nil {
-			return "Процесс агента уже остановлен"
+			return i18n.T("session.agents.process_gone")
 		}
 		if err := a.StopTask(ctx, st.id); err != nil {
 			return alertText(err)
 		}
-		return "Останавливаю"
+		return i18n.T("session.agents.stopping")
 	case "o":
 		// The transcript first: a background agent's tool result is only
 		// the launch notice.
@@ -510,7 +511,7 @@ func (m *Manager) HandleAgentButton(ctx context.Context, u telegram.Update) stri
 			text = st.result
 		}
 		if strings.TrimSpace(text) == "" {
-			return "Результат недоступен"
+			return i18n.T("session.agents.no_result")
 		}
 		name := fmt.Sprintf("agent-%s-%d.md", fileSafe.ReplaceAllString(st.name, "_"), st.n)
 		caption := "📄 " + render.Escape(st.name) + " · " + render.Escape(cutLabel(st.desc))
@@ -519,7 +520,7 @@ func (m *Manager) HandleAgentButton(ctx context.Context, u telegram.Update) stri
 		}
 		return ""
 	}
-	return "Кнопка устарела"
+	return i18n.T("session.button_expired")
 }
 
 var fileSafe = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
@@ -542,7 +543,7 @@ func (m *Manager) Agents(ctx context.Context, thread int) error {
 	}
 	m.mu.Unlock()
 	if p == nil {
-		m.say(ctx, s, "🤖 Агентов в этой сессии ещё не было.", true)
+		m.say(ctx, s, i18n.T("session.agents.none"), true)
 		return nil
 	}
 	if old != 0 {
@@ -572,9 +573,9 @@ func (m *Manager) beginContinuation(ctx context.Context, s *sess) {
 		m.mu.Unlock()
 		<-done
 	}
-	name := s.lastFinished
-	if name == "" {
-		name = "в фоне"
+	note := i18n.T("session.agents.continued_bg")
+	if s.lastFinished != "" {
+		note = i18n.T("session.agents.continued", s.lastFinished)
 	}
 	// The turn is claimed before the snapshot: the turn buttons refuse a
 	// rollback from now on.
@@ -583,7 +584,7 @@ func (m *Manager) beginContinuation(ctx context.Context, s *sess) {
 	s.turnNo++
 	s.turnBase = ""
 	s.status = render.Status{State: store.StateRunning, Started: now, LastEvent: now,
-		Note: "🤖 продолжение после агента " + name}
+		Note: note}
 	s.lastEdit, s.dirty, s.waits = now, false, 0
 	s.warned, s.overtime, s.stallFrom, s.retryAt = false, false, time.Time{}, time.Time{}
 	s.lastText, s.pending, s.interrupted = "", "", false

@@ -39,7 +39,7 @@ Claude Code works best on a real machine — with your repositories, toolchains,
 Each machine running tgsync is a **node** with its own bot. All nodes share one Telegram forum group: every node gets a control topic `🖥 <node name>` with a pinned status card, and every agent session gets its own topic.
 
 > [!NOTE]
-> The bot's interface is currently in Russian. The documentation is available in English and Russian, and every button is explained in English in the [user guide](docs/en/usage.md).
+> The bot speaks English or Russian: set `BOT_LANGUAGE=en` (the default) or `BOT_LANGUAGE=ru` in `.env`. The documentation is available in both languages; the English docs quote the English labels.
 
 ## Features
 
@@ -60,7 +60,7 @@ Elapsed time, step count, the current action and the agent's latest remark, upda
 <td width="33%" valign="top">
 
 ### 🔐 Permissions as buttons
-Allow once, deny, or «Всегда» (always) with deliberately narrow rules. Node-wide approve modes.
+Allow once, deny, or **Always** with deliberately narrow rules. Node-wide approve modes.
 
 </td>
 </tr>
@@ -88,7 +88,7 @@ The agent sends documents it wrote; you send files and screenshots. `/ls` browse
 <td valign="top">
 
 ### 🎙 Voice messages
-Transcribed by a self-hosted speech-to-text server. The agent restates the task and waits for your «да».
+Transcribed by a self-hosted speech-to-text server. The agent restates the task and waits for your "yes".
 
 </td>
 <td valign="top">
@@ -132,21 +132,21 @@ Linux (systemd), macOS (launchd), Windows (Task Scheduler), Docker optional. Plu
 
 **A session topic** — the task, the live status of the turn, the agent's answer
 
-<img src="docs/assets/mockup-session.svg" alt="Session topic: task, live status line, agent answer" width="720">
+<img src="docs/assets/mockup-session.en.svg" alt="Session topic: task, live status line, agent answer" width="720">
 
 <br><br>
 
 **A permission request** — nothing risky runs without your tap
 
-<img src="docs/assets/mockup-permission.svg" alt="Permission request with Allow, Deny and Always buttons" width="720">
+<img src="docs/assets/mockup-permission.en.svg" alt="Permission request with Allow, Deny and Always buttons" width="720">
 
 <br><br>
 
 **A turn summary** — review the diff, commit, or roll back
 
-<img src="docs/assets/mockup-turn-summary.svg" alt="Turn summary with changed files and Diff, Commit, Rollback buttons" width="720">
+<img src="docs/assets/mockup-turn-summary.en.svg" alt="Turn summary with changed files and Diff, Commit, Roll back buttons" width="720">
 
-<sub>Illustrations with a fictional project. Button labels are the bot's real (Russian) labels: Разрешить = Allow, Отклонить = Deny, Всегда = Always, Остановить = Stop, Коммит = Commit, Откатить = Roll back.</sub>
+<sub>Illustrations with a fictional project; the button labels are real, for the default English interface (<code>BOT_LANGUAGE=en</code>). With <code>BOT_LANGUAGE=ru</code> the bot speaks Russian.</sub>
 
 </div>
 
@@ -186,6 +186,7 @@ A node is a single Go binary. It long-polls the Telegram Bot API for its bot, st
    GROUP_CHAT_ID=-1001234567890
    PROJECTS_ROOT=/home/user/projects
    ```
+   Optionally add `BOT_LANGUAGE=ru` for the Russian interface (English by default).
 5. **Check the setup:**
    ```bash
    make check          # builds ./bin/tgsync and runs "tgsync check"
@@ -272,13 +273,13 @@ Full instructions, including the voice server, backup, upgrade and uninstall: **
 
 ## Approve modes
 
-`/approve` (or **🔐 Автоодобрение** in the menu) sets the mode for the whole node:
+`/approve` (or **🔐 Auto-approve** in the menu) sets the mode for the whole node:
 
 | Mode | Behaviour |
 |---|---|
-| 🔴 **По запросу** — on request *(default)* | A button for every action the built-in rules and your «Всегда» rules do not allow. |
-| 🟡 **Всё, кроме sudo** — all but sudo | Everything runs without asking; sudo still gets a button. |
-| 🟢 **Всё сам** — everything | Every command runs without asking, sudo included (if sudo is enabled). |
+| 🔴 **Ask me** *(default)* | A button for every action the built-in rules and your **Always** rules do not allow. |
+| 🟡 **All but sudo** | Everything runs without asking; sudo still gets a button. |
+| 🟢 **Allow all** | Every command runs without asking, sudo included (if sudo is enabled). |
 
 In every mode, questions from the agent and commands that may touch tgsync's own folder (`.env`, database) still come as buttons. Read [security.md](docs/en/security.md#what-the-agent-can-do-in-each-mode) before switching to 🟡 or 🟢.
 
@@ -335,7 +336,7 @@ They need a git project: tgsync snapshots the working tree before and after each
 <details>
 <summary><b>Is the bot available in English?</b></summary>
 
-Not yet — the bot's interface is in Russian only for now. The documentation is fully bilingual and translates every label.
+Yes. English is the default; set `BOT_LANGUAGE=ru` in `.env` for Russian (`BOT_LANGUAGE=en` switches back) and restart the node. The language covers the bot's messages and buttons, the command descriptions in Telegram, `tgsync check` and the install scripts. The documentation is available in both languages.
 
 </details>
 
@@ -344,7 +345,7 @@ Not yet — the bot's interface is in Russian only for now. The documentation is
 tgsync lets whoever controls the bot run an agent as your OS user, so it is built to be careful by default:
 
 - 🔒 **Only allowed users.** Messages and buttons from anyone outside `ALLOWED_USER_IDS` are silently ignored; a node works only in its own group and topics.
-- ✋ **Ask by default.** Every risky action waits for a tap; «Всегда» rules are deliberately narrow and are never offered for shells, interpreters, destructive commands or sudo.
+- ✋ **Ask by default.** Every risky action waits for a tap; **Always** rules are deliberately narrow and are never offered for shells, interpreters, destructive commands or sudo.
 - 🗝 **Secrets stay out of reach.** The agent's tools cannot read `.env` or the database, the bot token is removed from the agent's environment, and the sudo password never reaches the agent.
 - 🏠 **No third-party services.** Only Telegram and Claude Code; speech-to-text is self-hosted.
 

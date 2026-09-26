@@ -4,7 +4,7 @@ This guide takes you from nothing to a working tgsync node, then covers day-to-d
 
 **Terms.** A *node* is one machine running tgsync with its own Telegram bot. All nodes share one Telegram *forum group* (a supergroup with Topics). Each node has a *control topic* `🖥 <node name>`, and every Claude Code session gets its own topic.
 
-> The bot's interface and the output of `tgsync check` are currently in Russian. Command names (`/menu`, `/new`, …) are the same in any language.
+> The bot's interface, the output of `tgsync check` and the install scripts speak English by default; set `BOT_LANGUAGE=ru` in `.env` for Russian (see [configuration.md](configuration.md)). Command names (`/menu`, `/new`, …) are the same in any language.
 
 - [1. Prerequisites](#1-prerequisites)
 - [2. Telegram: bot and group](#2-telegram-bot-and-group)
@@ -90,7 +90,7 @@ Group settings → **Administrators** → **Add admin** → pick your bot. Enabl
 | **Manage topics** | **yes** | Creating, renaming, closing topics; hiding General. Without it the node refuses to start. |
 | **Pin messages** | recommended | Pinning the node card (counters and cleanup buttons) in the control topic. |
 | **Change group info** | recommended | Setting the group avatar and description once, if the group has none. |
-| **Delete messages** | recommended | Deleting empty topics and topics removed with 🧹 Cleanup (otherwise they are only closed), tidying the control topic, and required for `SUDO_MODE=telegram` (the typed password is deleted). |
+| **Delete messages** | recommended | Deleting empty topics and topics removed with 🧹 Clean up (otherwise they are only closed), tidying the control topic, and required for `SUDO_MODE=telegram` (the typed password is deleted). |
 
 Other rights are not used. If an optional right is missing, the bot posts a notice in its control topic listing what does not work.
 
@@ -162,26 +162,26 @@ The install scripts expect `.env` in the repository (or unpacked archive) folder
    PROJECTS_ROOT=/home/user/projects
    ```
    `PROJECTS_ROOT` must be absolute; each subfolder is a project.
-3. Optionally set `NODE_NAME` (default: hostname) and look through the rest of `.env.example`.
+3. Optionally set `NODE_NAME` (default: hostname) and `BOT_LANGUAGE` (`en`, the default, or `ru` for a Russian interface), and look through the rest of `.env.example`.
 4. Check before installing:
    ```bash
    make check          # builds ./bin/tgsync and runs "tgsync check"
    ```
 
-Example `tgsync check` output (messages are in Russian):
+Example `tgsync check` output:
 
 ```
-tgsync dev · папка /home/user/tgsync
-✓ конфиг — .env прочитан
-✓ бот — @ExampleNodeBot
-✓ группа с темами — -1001234567890
-✓ права бота — администратор, все нужные права
-✓ профили — full (по умолчанию full)
-✓ sudo — SUDO_MODE=off: команды с sudo отклоняются
+tgsync dev · folder /home/user/tgsync
+✓ config — .env loaded
+✓ bot — @ExampleNodeBot
+✓ group with topics — -1001234567890
+✓ bot rights — administrator, all required rights
+✓ profiles — full (default full)
+✓ sudo — SUDO_MODE=off: commands with sudo are rejected
 ✓ claude CLI — /home/user/.local/bin/claude 2.x.x (Claude Code)
 ✓ PROJECTS_ROOT — /home/user/projects
-✓ папка базы — data
-Всё в порядке.
+✓ database folder — data
+All good.
 ```
 
 Each line starting with `✗` says what to fix. Lines: config, bot, group with topics, bot rights, profiles, sudo, claude CLI, projects folder, database folder. [troubleshooting.md](troubleshooting.md) explains each failure.
@@ -335,7 +335,7 @@ Subcommands:
 4. It hides the **General** topic, once per group. If you unhide it later, it stays visible.
 5. If optional rights are missing, it posts a notice in the control topic.
 6. If it has **Change group info** and the group has no photo or description, it sets them, once.
-7. It posts the node card in the control topic and pins it (needs **Pin messages**). The card shows counters and the 🧹 Cleanup buttons.
+7. It posts the node card in the control topic and pins it (needs **Pin messages**). The card shows counters and the 🧹 Clean up buttons.
 8. It registers the command menu (`/menu`, `/new`, `/help`, …) for the group.
 9. It restores sessions that were open before a restart.
 
@@ -349,7 +349,7 @@ Sets the bot's profile photo, short description (profile page) and description (
 
 ### 6.3 Verify
 
-1. `tgsync check` prints `Всё в порядке.` ("all good").
+1. `tgsync check` prints `All good.`
 2. Service is running:
    - Linux: `systemctl --user status tgsync`
    - macOS: `launchctl print gui/$(id -u)/dev.tgsync`
@@ -369,7 +369,7 @@ All of these are `.env` settings; details and defaults are in [configuration.md]
 - **sudo**: `SUDO_MODE=off|env|telegram`. Read the risks in [configuration.md → sudo](configuration.md#sudo) first. The safest choice is `off` plus a narrow `NOPASSWD` rule.
 - **Auto-send files**: `AUTO_SEND_GLOBS=**/*.md,**/*.pdf` sends matching changed files at the end of each turn.
 - **Limits**: `MAX_PARALLEL_SESSIONS` (concurrent turns), `IDLE_TIMEOUT` (stop idle `claude` processes), `MAX_TURN_DURATION` (hard turn limit), `STALL_WARN` (silence warning), `REMIND_EVERY` (reminders about unanswered requests).
-- **Approval mode**: chosen in Telegram with `/approve` (🟢 everything / 🟡 everything except sudo / 🔴 ask every time, the default). Stored in the database, not in `.env`.
+- **Approval mode**: chosen in Telegram with `/approve` (🟢 Allow all / 🟡 All but sudo / 🔴 Ask me, the default). Stored in the database, not in `.env`.
 
 Restart the node after changing `.env` or `profiles.yaml`.
 

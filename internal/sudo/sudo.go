@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -124,9 +125,7 @@ var pathAssignRe = regexp.MustCompile(`(^|[^\w$])PATH\+?=`)
 // errAskpass refuses commands that could choose the program sudo runs as
 // askpass, or the sudo it runs: that program would get the one-time token
 // and, from the node, the password.
-var errAskpass = errors.New("tgsync: в sudo-команде нельзя задавать SUDO_ASKPASS или PATH, " +
-	"объявлять функцию или alias с именем sudo и вызывать sudo не из системной папки (./sudo, /tmp/…/sudo): " +
-	"tgsync сам подставляет свою программу-askpass. Перепиши команду.")
+func errAskpass() error { return errors.New(i18n.T("sudo.askpass_override")) }
 
 // overridesAskpass reports whether cmd could change what an approved sudo
 // call runs or which askpass it uses.
@@ -254,18 +253,18 @@ func shortFlags(cluster string) (kept string, takesNext bool) {
 func RewriteCommand(cmd, token string) (string, int, error) {
 	f, calls, err := sudoCalls(cmd)
 	if err != nil {
-		return "", 0, fmt.Errorf("не удалось разобрать команду: %v", err)
+		return "", 0, errors.New(i18n.T("sudo.parse", err))
 	}
 	if overridesAskpass(cmd, f, calls) {
-		return "", 0, errAskpass
+		return "", 0, errAskpass()
 	}
 	exe, err := askpassExe()
 	if err != nil {
-		return "", 0, fmt.Errorf("tgsync: не найден свой исполняемый файл для askpass: %v", err)
+		return "", 0, errors.New(i18n.T("sudo.no_exe", err))
 	}
 	qexe, err := syntax.Quote(exe, syntax.LangBash)
 	if err != nil {
-		return "", 0, fmt.Errorf("tgsync: путь askpass не записать в команду: %v", err)
+		return "", 0, errors.New(i18n.T("sudo.quote", err))
 	}
 	// After the user's own VAR=value words, right before sudo, so these win.
 	prefix := "SUDO_ASKPASS=" + qexe + " " + TokenVar + "=" + token + " "
@@ -499,13 +498,13 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	if s.peerCheck != nil {
 		var err error
 		if pid, err = s.peerCheck(conn); err != nil {
-			reply(false, "отказано: запрос не от sudo")
+			reply(false, i18n.T("sudo.not_sudo"))
 			return
 		}
 	}
 	g, retry, ok := s.take(strings.TrimSpace(strings.TrimPrefix(line, "token ")), pid)
 	if !ok {
-		reply(false, "нет одобренной sudo-команды с таким токеном или попытки кончились")
+		reply(false, i18n.T("sudo.no_grant"))
 		return
 	}
 	switch s.mode {
@@ -530,7 +529,7 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 		g.password, g.answered = pw, true
 		reply(true, pw)
 	default:
-		reply(false, "sudo выключен")
+		reply(false, i18n.T("sudo.off"))
 	}
 }
 
@@ -538,7 +537,7 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 func Askpass(sock, token string, w io.Writer) error {
 	conn, err := net.DialTimeout("unix", sock, 5*time.Second)
 	if err != nil {
-		return fmt.Errorf("tgsync askpass: нода недоступна: %v", err)
+		return errors.New(i18n.T("sudo.unreachable", err))
 	}
 	defer conn.Close()
 	if _, err := fmt.Fprintf(conn, "token %s\n", token); err != nil {

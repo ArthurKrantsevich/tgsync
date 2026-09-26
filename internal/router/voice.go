@@ -3,9 +3,9 @@ package router
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"strings"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
 )
@@ -17,21 +17,21 @@ func (r *Router) voice(ctx context.Context, u telegram.Update) {
 	thread, v := u.ThreadID, u.Voice
 	switch {
 	case thread == r.Topics.Control():
-		r.reply(ctx, thread, "🎙 Голосовые работают в теме сессии.")
+		r.reply(ctx, thread, i18n.T("router.voice.control"))
 		return
 	case !r.Sessions.Owns(thread):
 		return
 	case r.STT == nil:
-		r.reply(ctx, thread, "🎙 Распознавание не настроено (STT_URL).")
+		r.reply(ctx, thread, i18n.T("router.voice.no_stt"))
 		return
 	case r.STTMaxSeconds > 0 && v.Duration > r.STTMaxSeconds:
-		r.reply(ctx, thread, fmt.Sprintf("🎙 Слишком длинное: %d с, максимум %d с.", v.Duration, r.STTMaxSeconds))
+		r.reply(ctx, thread, i18n.T("router.voice.too_long", v.Duration, r.STTMaxSeconds))
 		return
 	case v.Size > telegram.MaxDownload:
-		r.reply(ctx, thread, "⚠️ Аудио больше 20 МБ — Telegram не даёт ботам скачивать такие.")
+		r.reply(ctx, thread, i18n.T("router.voice.too_big"))
 		return
 	}
-	status, err := r.API.SendMessage(ctx, thread, "🎙 Распознаю…", nil, true)
+	status, err := r.API.SendMessage(ctx, thread, i18n.T("router.voice.working"), nil, true)
 	if err != nil {
 		r.warn(ctx, thread, err)
 		return
@@ -42,11 +42,11 @@ func (r *Router) voice(ctx context.Context, u telegram.Update) {
 		_ = r.API.EditMessage(ctx, status, "⚠️ STT: "+render.Escape(err.Error()), nil)
 		return
 	case text == "":
-		_ = r.API.EditMessage(ctx, status, "🎙 Не расслышал, повтори.", nil)
+		_ = r.API.EditMessage(ctx, status, i18n.T("router.voice.empty"), nil)
 		return
 	}
-	_ = r.API.EditMessage(ctx, status, "🎙 Распознано:\n<blockquote expandable>"+render.Escape(cut(text, maxShown))+"</blockquote>", nil)
-	// «Свой ответ» is waiting: the voice is the answer, not a new task.
+	_ = r.API.EditMessage(ctx, status, i18n.T("router.voice.recognized", render.Escape(cut(text, maxShown))), nil)
+	// A "custom answer" is awaited: the voice is the answer, not a new task.
 	if r.Broker.HandleText(ctx, thread, text) {
 		return
 	}

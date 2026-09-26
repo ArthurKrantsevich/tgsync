@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // goos is runtime.GOOS; tests change it.
@@ -41,6 +43,7 @@ type Config struct {
 	STTModel        string
 	STTTimeout      time.Duration // 0: no context deadline; stt.Client still has its own 2-minute backstop
 	STTMaxSeconds   int
+	Language        i18n.Lang
 }
 
 // Load reads the configuration through getenv and reports every problem at once.
@@ -56,32 +59,32 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 	var errs []error
 	if c.BotToken == "" {
-		errs = append(errs, errors.New("TELEGRAM_BOT_TOKEN is required"))
+		errs = append(errs, errors.New(i18n.T("config.required", "TELEGRAM_BOT_TOKEN")))
 	}
 	ids, err := parseIDs(get("ALLOWED_USER_IDS"))
 	switch {
 	case err != nil:
 		errs = append(errs, fmt.Errorf("ALLOWED_USER_IDS: %w", err))
 	case len(ids) == 0:
-		errs = append(errs, errors.New("ALLOWED_USER_IDS is required"))
+		errs = append(errs, errors.New(i18n.T("config.required", "ALLOWED_USER_IDS")))
 	}
 	c.AllowedUserIDs = ids
 	if raw := get("GROUP_CHAT_ID"); raw == "" {
-		errs = append(errs, errors.New("GROUP_CHAT_ID is required"))
+		errs = append(errs, errors.New(i18n.T("config.required", "GROUP_CHAT_ID")))
 	} else if id, err := strconv.ParseInt(raw, 10, 64); err != nil || id >= 0 {
-		errs = append(errs, errors.New("GROUP_CHAT_ID must be a negative supergroup id like -1001234567890"))
+		errs = append(errs, errors.New(i18n.T("config.group_id")))
 	} else {
 		c.GroupChatID = id
 	}
 	if c.ProjectsRoot == "" {
-		errs = append(errs, errors.New("PROJECTS_ROOT is required"))
+		errs = append(errs, errors.New(i18n.T("config.required", "PROJECTS_ROOT")))
 	} else if !filepath.IsAbs(c.ProjectsRoot) {
-		errs = append(errs, errors.New("PROJECTS_ROOT must be an absolute path"))
+		errs = append(errs, errors.New(i18n.T("config.abs_path", "PROJECTS_ROOT")))
 	}
 	if raw := get("MAX_PARALLEL_SESSIONS"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {
-			errs = append(errs, errors.New("MAX_PARALLEL_SESSIONS must be a positive integer"))
+			errs = append(errs, errors.New(i18n.T("config.positive_int", "MAX_PARALLEL_SESSIONS")))
 		} else {
 			c.MaxParallel = n
 		}
@@ -98,10 +101,10 @@ func Load(getenv func(string) string) (*Config, error) {
 	case "off", "telegram":
 	case "env":
 		if c.SudoPassword == "" {
-			errs = append(errs, errors.New("SUDO_MODE=env requires SUDO_PASSWORD"))
+			errs = append(errs, errors.New(i18n.T("config.sudo_password")))
 		}
 	default:
-		errs = append(errs, errors.New("SUDO_MODE must be off, env or telegram"))
+		errs = append(errs, errors.New(i18n.T("config.sudo_mode")))
 	}
 	if goos == "windows" && c.SudoMode != "off" {
 		c.SudoMode, c.SudoUnsupported = "off", true
@@ -130,7 +133,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		default:
 			v, err := time.ParseDuration(raw)
 			if err != nil || v < 0 {
-				errs = append(errs, fmt.Errorf("%s must be a duration like 30m or 2h, got %q", d.key, raw))
+				errs = append(errs, errors.New(i18n.T("config.duration", d.key, raw)))
 			} else {
 				*d.dst = v
 			}
@@ -144,12 +147,12 @@ func Load(getenv func(string) string) (*Config, error) {
 		c.ShowHookOutput = true
 	case "false", "0", "no":
 	default:
-		errs = append(errs, errors.New("SHOW_HOOK_OUTPUT must be true or false"))
+		errs = append(errs, errors.New(i18n.T("config.bool", "SHOW_HOOK_OUTPUT")))
 	}
 	c.STTURL = get("STT_URL")
 	if c.STTURL != "" {
 		if u, err := url.Parse(c.STTURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			errs = append(errs, errors.New("STT_URL must be an http(s) URL like http://127.0.0.1:8000"))
+			errs = append(errs, errors.New(i18n.T("config.stt_url")))
 		}
 	}
 	if c.STTModel = get("STT_MODEL"); c.STTModel == "" {
@@ -159,9 +162,17 @@ func Load(getenv func(string) string) (*Config, error) {
 	if raw := get("STT_MAX_SECONDS"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {
-			errs = append(errs, errors.New("STT_MAX_SECONDS must be a positive integer"))
+			errs = append(errs, errors.New(i18n.T("config.positive_int", "STT_MAX_SECONDS")))
 		} else {
 			c.STTMaxSeconds = n
+		}
+	}
+	c.Language = i18n.Default
+	if raw := get("BOT_LANGUAGE"); raw != "" {
+		if l, ok := i18n.Parse(raw); ok {
+			c.Language = l
+		} else {
+			errs = append(errs, errors.New(i18n.T("config.language", raw)))
 		}
 	}
 	if c.DBPath == "" {
@@ -185,7 +196,7 @@ func parseIDs(raw string) ([]int64, error) {
 		}
 		id, err := strconv.ParseInt(part, 10, 64)
 		if err != nil || id <= 0 {
-			return nil, fmt.Errorf("invalid user id %q", part)
+			return nil, errors.New(i18n.T("config.user_id", part))
 		}
 		ids = append(ids, id)
 	}

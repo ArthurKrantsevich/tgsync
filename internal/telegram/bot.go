@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -388,18 +389,18 @@ func (t *Bot) DownloadFile(ctx context.Context, fileID string) ([]byte, error) {
 		if errors.As(err, &ue) {
 			err = ue.Err
 		}
-		return nil, fmt.Errorf("скачать файл: %w", err)
+		return nil, fmt.Errorf(i18n.T("tg.download"), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("скачать файл: HTTP %d", resp.StatusCode)
+		return nil, errors.New(i18n.T("tg.download_http", resp.StatusCode))
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxDownload+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > MaxDownload {
-		return nil, errors.New("файл больше 20 МБ — лимит Telegram для ботов")
+		return nil, errors.New(i18n.T("tg.too_big"))
 	}
 	return data, nil
 }
@@ -416,15 +417,15 @@ func (t *Bot) SetCommands(ctx context.Context, cmds []Command) error {
 // SetProfile sets the bot's short description, description and profile photo (PNG/JPEG).
 func (t *Bot) SetProfile(ctx context.Context, short, description string, photo []byte) error {
 	if _, err := t.b.SetMyShortDescription(ctx, &bot.SetMyShortDescriptionParams{ShortDescription: short}); err != nil {
-		return fmt.Errorf("короткое описание: %w", mapErr(err))
+		return fmt.Errorf(i18n.T("tg.short_desc"), mapErr(err))
 	}
 	if _, err := t.b.SetMyDescription(ctx, &bot.SetMyDescriptionParams{Description: description}); err != nil {
-		return fmt.Errorf("описание: %w", mapErr(err))
+		return fmt.Errorf(i18n.T("tg.description"), mapErr(err))
 	}
 	if len(photo) > 0 {
 		p := &models.InputProfilePhotoStatic{Photo: "attach://avatar.png", MediaAttachment: bytes.NewReader(photo)}
 		if _, err := t.b.SetMyProfilePhoto(ctx, &bot.SetMyProfilePhotoParams{Photo: p}); err != nil {
-			return fmt.Errorf("фото: %w", mapErr(err))
+			return fmt.Errorf(i18n.T("tg.photo"), mapErr(err))
 		}
 	}
 	return nil

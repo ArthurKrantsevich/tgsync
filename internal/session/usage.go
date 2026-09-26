@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
@@ -35,7 +36,7 @@ func hintAt(c *agent.ContextInfo) int {
 }
 
 func compactKeyboard(thread int) telegram.Keyboard {
-	return telegram.Keyboard{{{Text: "🗜 Сжать", Data: "cx:" + strconv.Itoa(thread)}}}
+	return telegram.Keyboard{{{Text: i18n.T("session.usage.btn_compact"), Data: "cx:" + strconv.Itoa(thread)}}}
 }
 
 // recordUsage stores what each model used in the turn. The CLI reports
@@ -105,7 +106,7 @@ func (m *Manager) contextHint(ctx context.Context, s *sess, info *agent.ContextI
 	if !show {
 		return
 	}
-	text := fmt.Sprintf("💡 Контекст %d%% — сожми историю, пока агент не сделал это сам", pct)
+	text := i18n.T("session.usage.hint", pct)
 	if _, err := m.d.API.SendMessage(ctx, thread, text, compactKeyboard(thread), true); err != nil {
 		m.telegramFailed(s, "send context hint", err)
 	}
@@ -138,7 +139,7 @@ func (m *Manager) Context(ctx context.Context, thread int) error {
 		stale = true
 	}
 	if info == nil {
-		m.say(ctx, s, "🧠 Данных о контексте пока нет — они появятся после первого хода.", true)
+		m.say(ctx, s, i18n.T("session.usage.no_context"), true)
 		return nil
 	}
 	v := contextView(info)
@@ -206,13 +207,12 @@ func (m *Manager) compacted(ctx context.Context, s *sess, trigger string, before
 	m.mu.Lock()
 	s.ctxSnap, s.hinted = nil, false
 	m.mu.Unlock()
-	how := "вручную"
+	text := i18n.T("session.usage.compacted")
 	if trigger == "auto" {
-		how = "авто"
+		text = i18n.T("session.usage.compacted_auto")
 	}
-	text := "🗜 История сжата (" + how + ")"
 	if before > 0 {
-		text += ", было " + render.Tokens(before)
+		text += i18n.T("session.usage.compacted_was", render.Tokens(before))
 	}
 	m.say(ctx, s, text, true)
 }
@@ -234,13 +234,13 @@ func (m *Manager) compact(ctx context.Context, thread int) (string, error) {
 	case s == nil:
 		return "", ErrUnknownSession
 	case queued:
-		return "Сжатие уже в очереди", nil
+		return i18n.T("session.usage.already_queued"), nil
 	}
 	if err := m.Message(ctx, thread, "/compact"); err != nil {
 		return "", err
 	}
 	if busy {
-		return "Сжатие в очереди", nil
+		return i18n.T("session.usage.queued"), nil
 	}
-	return "Сжимаю…", nil
+	return i18n.T("session.usage.compacting"), nil
 }

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // MaxSize is the Bot API upload limit.
@@ -178,7 +180,7 @@ type checked struct {
 func resolve(projectDir, p string, protected []string) (checked, error) {
 	rel, ok := relIn(projectDir, p)
 	if !ok {
-		return checked{}, fmt.Errorf("%s: файл вне папки проекта", p)
+		return checked{}, errors.New(i18n.T("files.outside", p))
 	}
 	abs := filepath.Join(projectDir, rel)
 	st, err := os.Stat(abs)
@@ -194,10 +196,10 @@ func resolve(projectDir, p string, protected []string) (checked, error) {
 		real, rerr = filepath.EvalSymlinks(abs)
 		root, rootErr := filepath.EvalSymlinks(projectDir)
 		if rerr != nil || rootErr != nil {
-			return checked{}, fmt.Errorf("%s: не удалось проверить путь", rel)
+			return checked{}, errors.New(i18n.T("files.check_path", rel))
 		}
 		if _, ok := relIn(root, real); !ok {
-			return checked{}, fmt.Errorf("%s: ссылка ведёт за пределы проекта", rel)
+			return checked{}, errors.New(i18n.T("files.link_outside", rel))
 		}
 		for _, pr := range protected {
 			if pr == "" {
@@ -208,19 +210,19 @@ func resolve(projectDir, p string, protected []string) (checked, error) {
 				prReal = filepath.Clean(pr)
 			}
 			if SamePath(real, prReal) || SamePath(abs, pr) || SameFile(abs, pr) {
-				return checked{}, fmt.Errorf("%s: служебный файл tgsync не отправляется", rel)
+				return checked{}, errors.New(i18n.T("files.protected", rel))
 			}
 		}
 	}
 	switch {
 	case err != nil:
-		return checked{}, fmt.Errorf("%s: файл не найден", rel)
+		return checked{}, errors.New(i18n.T("files.not_found", rel))
 	case st.IsDir():
-		return checked{}, fmt.Errorf("%s: это папка", rel)
+		return checked{}, errors.New(i18n.T("files.is_dir", rel))
 	case !st.Mode().IsRegular():
-		return checked{}, fmt.Errorf("%s: не обычный файл", rel)
+		return checked{}, errors.New(i18n.T("files.not_regular_at", rel))
 	case st.Size() > MaxSize:
-		return checked{}, fmt.Errorf("%s: %d МБ, больше лимита Telegram 50 МБ", rel, st.Size()>>20)
+		return checked{}, errors.New(i18n.T("files.too_big", rel, st.Size()>>20))
 	}
 	return checked{abs: abs, rel: rel, real: real, info: st}, nil
 }
@@ -231,24 +233,24 @@ func resolve(projectDir, p string, protected []string) (checked, error) {
 func readChecked(path string, want os.FileInfo, limit int64) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|openFlags, 0)
 	if err != nil {
-		return nil, errors.New("не удалось открыть файл")
+		return nil, errors.New(i18n.T("files.open_failed"))
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	switch {
 	case err != nil:
-		return nil, errors.New("не удалось проверить файл")
+		return nil, errors.New(i18n.T("files.stat_failed"))
 	case !st.Mode().IsRegular():
-		return nil, errors.New("не обычный файл")
+		return nil, errors.New(i18n.T("files.not_regular"))
 	case !os.SameFile(st, want):
-		return nil, errors.New("файл подменили после проверки")
+		return nil, errors.New(i18n.T("files.swapped"))
 	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, errors.New("больше лимита Telegram 50 МБ")
+		return nil, errors.New(i18n.T("files.over_limit"))
 	}
 	return data, nil
 }
@@ -281,7 +283,7 @@ func Match(globs []string, rel string) bool {
 
 func capDiff(out []byte) (string, error) {
 	if len(out) > MaxSize {
-		return "", errors.New("diff больше 50 МБ")
+		return "", errors.New(i18n.T("files.diff_too_big"))
 	}
 	return string(out), nil
 }
@@ -299,21 +301,21 @@ func ResolveDir(projectDir, p string) (abs, rel string, err error) {
 		if rel, ok := relIn(projectDir, p); ok {
 			p = filepath.Join(projectDir, rel)
 		} else {
-			return "", "", fmt.Errorf("%s: папка вне проекта", p)
+			return "", "", errors.New(i18n.T("files.dir_outside", p))
 		}
 	}
 	st, err := os.Stat(p)
 	if err != nil || !st.IsDir() {
-		return "", "", fmt.Errorf("%s: папка не найдена", p)
+		return "", "", errors.New(i18n.T("files.dir_not_found", p))
 	}
 	real, err1 := filepath.EvalSymlinks(p)
 	root, err2 := filepath.EvalSymlinks(projectDir)
 	if err1 != nil || err2 != nil {
-		return "", "", fmt.Errorf("%s: не удалось проверить путь", p)
+		return "", "", errors.New(i18n.T("files.check_path", p))
 	}
 	if real != root {
 		if _, ok := relIn(root, real); !ok {
-			return "", "", fmt.Errorf("%s: ссылка ведёт за пределы проекта", p)
+			return "", "", errors.New(i18n.T("files.link_outside", p))
 		}
 	}
 	rel, _ = filepath.Rel(projectDir, p)
@@ -348,10 +350,10 @@ func SafeName(name string) string {
 func Size(n int64) string {
 	switch {
 	case n < 1<<10:
-		return fmt.Sprintf("%d Б", n)
+		return i18n.T("files.size.b", n)
 	case n < 1<<20:
-		return fmt.Sprintf("%d КБ", n>>10)
+		return i18n.T("files.size.kb", n>>10)
 	default:
-		return fmt.Sprintf("%.1f МБ", float64(n)/(1<<20))
+		return i18n.T("files.size.mb", float64(n)/(1<<20))
 	}
 }

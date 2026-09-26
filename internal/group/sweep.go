@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
 )
 
@@ -107,7 +108,7 @@ func (g *Group) Sweep(ctx context.Context, before time.Time) int {
 // SweepAll deletes every tracked message now: the 🧽 button of the card.
 func (g *Group) SweepAll(ctx context.Context) string {
 	if n := g.Sweep(ctx, g.now().Add(time.Second)); n > 0 {
-		return "🧽 Удалено сообщений: " + strconv.Itoa(n)
+		return i18n.T("group.sweep.done", n)
 	}
-	return "Чистить нечего"
+	return i18n.T("group.sweep.nothing")
 }

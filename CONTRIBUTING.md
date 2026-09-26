@@ -63,7 +63,7 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `ci`. The scope is us
 
 - Keep a pull request focused on one change; describe what it changes and how you tested it.
 - Update the documentation in **both** `docs/en` and `docs/ru` when behaviour, commands, buttons or settings change, and add an entry to both `CHANGELOG.md` and `CHANGELOG.ru.md`.
-- The bot's interface strings are in Russian; keep new strings consistent with the existing ones. Code comments and commit messages are in English.
+- User-facing strings live in `internal/i18n`: add every new string there in both English and Russian and use `i18n.T` / `i18n.N` in code. `go test ./internal/i18n/` checks that both languages are filled in and use the same format verbs. Code comments and commit messages are in English.
 - Anything that widens what the agent may do without a tap (permission rules, approve modes, protected paths, sudo) needs a clear rationale and tests for the refused cases.
 - Never commit real bot tokens, user or chat IDs, passwords or personal paths. Use placeholders such as `-1001234567890`, `123456789` and `/home/user`.
 - tgsync must not call third-party AI or ML cloud services; model inference (for example speech recognition) runs on self-hosted endpoints only.

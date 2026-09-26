@@ -4,7 +4,6 @@ package limits
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sort"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
@@ -87,27 +87,27 @@ func (t *Tracker) Observe(ctx context.Context, thread int, rl agent.RateLimit) {
 	switch rl.Status {
 	case "allowed_warning":
 		if t.notified[rl.Window] != key {
-			text = fmt.Sprintf("⚠️ Лимит подписки «%s» почти исчерпан", name)
+			text = i18n.T("limits.warn", name)
 			if rl.Utilization >= 0 {
-				text = fmt.Sprintf("⚠️ Лимит подписки «%s»: %d%%", name, int(rl.Utilization*100+0.5))
+				text = i18n.T("limits.warn_pct", name, int(rl.Utilization*100+0.5))
 			}
 			if !rl.ResetsAt.IsZero() {
-				text += " · сброс " + render.ResetTime(rl.ResetsAt, now)
+				text += i18n.T("limits.reset", render.ResetTime(rl.ResetsAt, now))
 			}
 			t.notified[rl.Window] = key
 		}
 	case "rejected":
 		if t.notified[rl.Window] != key {
-			text = fmt.Sprintf("⛔ Лимит подписки «%s» исчерпан", name)
+			text = i18n.T("limits.rejected", name)
 			if !rl.ResetsAt.IsZero() {
-				text += " · сброс " + render.ResetTime(rl.ResetsAt, now)
+				text += i18n.T("limits.reset", render.ResetTime(rl.ResetsAt, now))
 			}
 			silent = false
 			t.notified[rl.Window] = key
 		}
 	case "allowed":
 		if prev.Status == "rejected" {
-			text = fmt.Sprintf("✅ Лимит «%s» снова доступен", name)
+			text = i18n.T("limits.recovered", name)
 			toSession = false
 		}
 		delete(t.notified, rl.Window)
@@ -155,12 +155,12 @@ func (t *Tracker) observeUnnamed(ctx context.Context, thread int, rl agent.RateL
 		if repeat {
 			return
 		}
-		text, silent := "⚠️ Лимит подписки почти исчерпан", true
+		text, silent := i18n.T("limits.warn_unnamed"), true
 		if rl.Status == "rejected" {
-			text, silent = "⛔ Лимит подписки исчерпан", false
+			text, silent = i18n.T("limits.rejected_unnamed"), false
 		}
 		if !rl.ResetsAt.IsZero() {
-			text += " · сброс " + render.ResetTime(rl.ResetsAt, now)
+			text += i18n.T("limits.reset", render.ResetTime(rl.ResetsAt, now))
 		}
 		control := t.control()
 		if thread != 0 && thread != control {
@@ -193,6 +193,6 @@ func (t *Tracker) observeUnnamed(ctx context.Context, thread int, rl agent.RateL
 	}
 	sort.Strings(recovered)
 	for _, name := range recovered {
-		t.send(ctx, t.control(), fmt.Sprintf("✅ Лимит «%s» снова доступен", render.Escape(render.WindowName(name))), true)
+		t.send(ctx, t.control(), i18n.T("limits.recovered", render.Escape(render.WindowName(name))), true)
 	}
 }

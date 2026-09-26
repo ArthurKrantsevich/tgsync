@@ -32,6 +32,7 @@ questions into inline buttons.
 - File exchange in both directions; voice messages through a self-hosted
   speech-to-text server.
 - Optional `sudo` for the agent, approved per command.
+- Interface in English or Russian, chosen per node with `BOT_LANGUAGE` (§12.1).
 
 ### Non-goals
 
@@ -55,7 +56,7 @@ questions into inline buttons.
 | **Node** | One running `tgsync` process on one machine, with its own bot token, `.env`, SQLite database and control topic. Named by `NODE_NAME` (default: hostname). |
 | **Group** | A Telegram supergroup with forum topics enabled (`GROUP_CHAT_ID`, e.g. `-1001234567890`). Several nodes may share one group; each node has its own bot in it. |
 | **Control topic** | The node's own topic, named `🖥 <node>`. It carries the pinned card, menus and node-level commands. Its id is stored in `kv.control_thread_id`; it is re-created if deleted. |
-| **Pinned card** | A message in the control topic showing the node name, open/closed session counts and "online since", with buttons 🧹 Cleanup and 🧽 Clear topic. Refreshed every 10 s when its text changes and at least once a minute. |
+| **Pinned card** | A message in the control topic showing the node name, open/closed session counts and "online since", with buttons 🧹 Clean up and 🧽 Clear topic. Refreshed every 10 s when its text changes and at least once a minute. |
 | **Session topic** | One topic per agent session, named `<project> · <title>` (≤128 UTF-16 units). Its icon shows the state (💻 active, ✅ closed, ❌ failed, with fallbacks). |
 | **Project** | A directory directly under `PROJECTS_ROOT` whose name matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`. The session's working directory. `/newproject` creates it and runs `git init`. |
 | **Profile** | A named set of Claude Code settings from `profiles.yaml`: `setting_sources`, `env`, and a `settings` override passed as `--settings`. The built-in `full` profile uses `user, project, local`. Selected by `--profile`, then `projects.<name>.profile`, then `DEFAULT_PROFILE`. |
@@ -64,7 +65,7 @@ questions into inline buttons.
 | **Session state** | `queued`, `starting`, `running`, `waiting` (on the user), `idle`, `interrupted`, `failed`, `closed`. Persisted in `sessions.state`. |
 | **Permission mode** | Claude Code's own mode for the session: `default`, `acceptEdits`, `plan` (changed by `/mode`). Passed to the CLI. |
 | **Approve mode** | Node-wide tgsync setting (`/approve`): `ask` (🔴 a button for every request), `nosudo` (🟡 everything except sudo is allowed), `all` (🟢 everything, sudo included). Stored in `kv.approve_mode`, default `ask`. |
-| **Rule ("Всегда" / Always)** | A per-project saved allowance created by the "♾ Всегда" button, stored in `permission_rules`. |
+| **Rule (Always)** | A per-project saved allowance created by the "♾ Always" button, stored in `permission_rules`. |
 
 ---
 
@@ -93,7 +94,8 @@ questions into inline buttons.
 | `internal/profiles` | Loads `profiles.yaml` and resolves profiles. | `gopkg.in/yaml.v3` |
 | `internal/stt` | Client for an OpenAI-compatible `/v1/audio/transcriptions` endpoint. | — |
 | `internal/check` | Checks run by `tgsync check` (claude CLI, folders). | — |
-| `internal/brand` | Embedded avatar and bot/group description texts. | — |
+| `internal/brand` | Embedded avatar and bot/group description texts. | i18n |
+| `internal/i18n` | Catalog of every user-facing string in English and Russian; `T` and `N` (plurals) return text in the language set at startup. | — |
 
 ### 3.2 Process model
 
@@ -128,14 +130,14 @@ event handling.
    and menus. A topic owned by one of this node's sessions: session handling.
    Any other topic belongs to another node and is ignored.
 5. **Session text.** In order: a pending sudo password prompt takes the text
-   (and deletes the message); known session commands run; a pending "✍ Свой
-   ответ" question takes the text as the answer; otherwise the text goes to
+   (and deletes the message); known session commands run; a pending "✍ Type
+   answer" question takes the text as the answer; otherwise the text goes to
    `Manager.MessageFrom`.
 6. **Queue.** The message gets a 👀 reaction and is appended to the session
    inbox (prefixed with the list of files received without a caption). A
-   session titled `новая сессия` is renamed after the first line of the text
-   (≤40 characters). If a turn is running or queued, a notice "📥 В очереди"
-   with a "⚡ Отправить сейчас" button is posted.
+   session titled `new session` is renamed after the first line of the text
+   (≤40 characters). If a turn is running or queued, a notice "📥 Queued"
+   with a "⚡ Send now" button is posted.
 7. **Schedule.** `schedule` picks the first queued topic whose project has no
    running turn while fewer than `MAX_PARALLEL_SESSIONS` turns run. Others
    become `queued`.
@@ -153,7 +155,7 @@ event handling.
 11. **Finish.** On the result event: open prompts of the topic are withdrawn,
     the state becomes `idle`, the status message is deleted (edited if it
     cannot be deleted), the 👀 reaction is removed, the answer is sent in
-    chunks, and a result line (`✅ Ход завершён · time · steps · $cost`) with a
+    chunks, and a result line (`✅ Turn done · time · steps · $cost`) with a
     `⋯` button is appended to the last chunk or sent separately. Usage is
     recorded. The next queued turn is scheduled. Files are delivered in the
     background. Then the context usage is queried (5 s timeout) and `· 🧠 N%`
@@ -206,7 +208,7 @@ reports that.
 | SDK message | Event | Handling |
 |---|---|---|
 | `system/init` | `Init` | Stores the Claude session id; remembers slash commands for `/skills`; once per session object, reports MCP servers whose status is neither `connected` nor `pending`. |
-| `system/compact_boundary` | `Compacted` | Posts "🗜 История сжата (авто/вручную), было N"; clears the context snapshot. |
+| `system/compact_boundary` | `Compacted` | Posts "🗜 History compacted (auto/manual), was N"; clears the context snapshot. |
 | rate limit event | `RateLimit` | Passed to the limits tracker (§4.7). |
 | task started / progress / notification / terminal update | `TaskStarted`, `TaskProgress`, `TaskDone` | Subagent panel (§4.5). Only `local_agent`, `local_workflow` and untyped tasks are tracked; shells are ignored. |
 | assistant text | `Text` | Top-level only: kept as pending text; becomes the status note when the next tool call starts, or the posted answer at turn end. Subagent text is not posted. |
@@ -240,13 +242,20 @@ project dir, protected paths). For every call the CLI forwards:
    sudo calls cannot be rewritten (e.g. sudo behind `env`, `xargs`, `sh -c`)
    is denied with an explanation.
 5. If the decision is not `Confirm` and the approve mode allows it (`all`, or
-   `nosudo` for non-sudo requests), the call is allowed and a silent note
-   "✅ авто: …" is posted.
+   `nosudo` for non-sudo requests), the call is allowed. A silent note
+   "✅ auto: <description>" with the command is posted only for sudo and
+   for destructive Bash commands (`destructive`: deleting, moving or
+   truncating files, `chmod`/`chown`, stopping processes, `systemctl`,
+   `git push/reset/clean/checkout/restore/rebase`, `git branch -D`,
+   `docker rm/prune`, `find -delete/-exec`, shells, `eval`, `xargs`, `ssh`,
+   commands whose name is built at run time and commands that do not
+   parse). Other calls appear only in the turn's status line, where a Bash
+   call shows the agent's `description` instead of the command.
 6. Otherwise a prompt is posted: tool name, title, and for Bash the
    description (≤300 characters) and command (≤700); for Edit the path and
    old/new strings (≤350 each); for Write the path and content (≤700); for
-   other tools the JSON input (≤700). Buttons: ✅ Разрешить, ❌ Отклонить, and
-   ♾ Всегда: `<rule>` when an Always rule can be built and the request is not
+   other tools the JSON input (≤700). Buttons: ✅ Allow, ❌ Deny, and
+   ♾ Always: `<rule>` when an Always rule can be built and the request is not
    sudo or `Confirm`.
 7. The callback blocks until a button is pressed, the turn ends, the process
    exits or the session closes. While it waits the session state is
@@ -258,11 +267,11 @@ next message.
 ### 4.4 `AskUserQuestion`
 
 - The input's `questions` are shown one at a time: optional header, text,
-  "Вопрос i из n".
+  "Question i of n".
 - Single choice: one button per option; a press answers.
-- Multiple choice: toggle buttons (☐/☑) and "Готово"; at least one option
+- Multiple choice: toggle buttons (☐/☑) and "Done"; at least one option
   must be chosen.
-- Every question has "✍ Свой ответ": the next text message (or transcribed
+- Every question has "✍ Type answer": the next text message (or transcribed
   voice message) in the topic becomes the answer.
 - After the last answer the call is allowed with `UpdatedInput` = original
   input plus `answers` (question text → answer, multiple choices joined with
@@ -281,8 +290,8 @@ next message.
   One button per listed agent (3 per row) opens its card.
 - **Card view:** name, description, state, caller, current action (the
   subagent's latest tool call), summary (≤1000 characters), start time,
-  duration, tool-use count. Buttons: ⬅ Назад; ⏹ Остановить (`StopTask`) while
-  running; 📄 Результат when finished — the last assistant text of the task
+  duration, tool-use count. Buttons: ⬅ Back; ⏹ Stop (`StopTask`) while
+  running; 📄 Result when finished — the last assistant text of the task
   transcript (only its last 8 MiB are read) or else the tool result, sent as
   `agent-<name>-<n>.md`.
 - Panel edits are throttled like status messages; an open card of a running
@@ -302,7 +311,7 @@ next message.
 - **Context.** After each turn `GetContextUsage` is queried (5 s timeout).
   The percentage is appended to the result line.
 - **Compaction hint.** When the context crosses 70 % — or 10 points below the
-  auto-compaction threshold if that is lower — a hint with a 🗜 Сжать button
+  auto-compaction threshold if that is lower — a hint with a 🗜 Compact button
   is posted once per crossing. The button queues `/compact` as a message
   (not twice).
 - `/context` shows the model, totals, per-category breakdown and the
@@ -319,8 +328,8 @@ next message.
 - Every event is saved to `rate_limits`. Notices are deduplicated by
   `status|reset time`; the dedup state is rebuilt from the database at start.
 - `allowed_warning` → silent notice with utilization and reset time;
-  `rejected` → notice with sound; `allowed` after `rejected` → "✅ снова
-  доступен" in the control topic only. Warning/rejection notices go to the
+  `rejected` → notice with sound; `allowed` after `rejected` → "✅ Limit … is available
+  again" in the control topic only. Warning/rejection notices go to the
   session topic that reported them and to the control topic. If the control
   topic notice fails, it is retried on the next event.
 - An event without a window name: a warning or rejection is shown but not
@@ -336,7 +345,7 @@ next message.
 - Updates from users not in `ALLOWED_USER_IDS` are ignored silently.
 - Every allowed user has full control; there are no roles.
 - Callback buttons additionally check that they are pressed in the topic they
-  belong to; stale buttons answer "Кнопка устарела" / "Запрос устарел".
+  belong to; stale buttons answer "Button expired" / "Request expired".
 
 ### 5.2 Protected tgsync files
 
@@ -404,9 +413,9 @@ commands a hit also forces a button.
 
 | Mode | Stored value | Behaviour |
 |---|---|---|
-| 🔴 По запросу | `ask` (default) | Every `Ask` request shows buttons. |
-| 🟡 Всё, кроме sudo | `nosudo` | `Ask` requests are auto-allowed with a silent "✅ авто" note; sudo requests show buttons. |
-| 🟢 Всё сам | `all` | `Ask` requests and sudo requests are auto-allowed (sudo still needs the password flow). |
+| 🔴 Ask me | `ask` (default) | Every `Ask` request shows buttons. |
+| 🟡 All but sudo | `nosudo` | `Ask` requests are auto-allowed; destructive commands leave a silent "✅ auto" note; sudo requests show buttons. |
+| 🟢 Allow all | `all` | `Ask` requests and sudo requests are auto-allowed (sudo still needs the password flow). |
 
 In all modes: `Deny` stays denied, `Confirm` shows buttons, and
 `AskUserQuestion` is always shown.
@@ -525,11 +534,11 @@ gets a short note once (again only after a snapshot has worked since).
 - Changed files are collected from `Write`, `Edit`, `MultiEdit` and
   `NotebookEdit` calls with a path inside the project. Changes made by Bash
   commands are not collected.
-- The summary message: `📎 Изменено за ход: N · +A −D`, then up to 10 files,
-  each with `+a −d`, `(новый)`, `(удалён)` or `(бинарный)` and ✓ if a version
+- The summary message: `📎 Changed this turn: N · +A −D`, then up to 10 files,
+  each with `+a −d`, `(new)`, `(deleted)` or `(binary)` and ✓ if a version
   was sent. Figures come from `git diff --numstat` / `--name-status`
   (`--no-renames --relative`) between the two snapshots.
-- With stats available, the buttons are 🔀 Diff, ✅ Коммит, ↩ Откатить. The
+- With stats available, the buttons are 🔀 Diff, ✅ Commit, ↩ Roll back. The
   last 5 summaries per session keep live buttons.
 
 ### 6.3 Diff
@@ -550,7 +559,7 @@ turn of an idle session.
 ### 6.5 Rollback
 
 - Only for the latest turn, only when the session is idle with an empty
-  inbox; requires a confirmation (Да, откатить / Нет).
+  inbox; requires a confirmation (Yes, roll back / No).
 - While it runs, no turn starts; a continuation turn waits for it to finish.
 - A current snapshot is taken. For each file:
   - differs between the end snapshot and now (changed after the turn) → left
@@ -596,7 +605,7 @@ At most 5 files are sent automatically per turn.
 ### 7.2 `/ls` browser
 
 - Lists a project folder (default: root): folders first, then files with
-  sizes; 30 entries per page with "⬆ .." and "➡ ещё" buttons.
+  sizes; 30 entries per page with "⬆ .." and "➡ More" buttons.
 - Hidden: `.git`, `node_modules`, `.venv`, `__pycache__` and protected files.
 - The path must resolve (with symlinks) inside the project.
 - Navigating edits the message in place. The last 5 listing messages per
@@ -614,7 +623,7 @@ At most 5 files are sent automatically per turn.
   folder.
 - With a caption: the caption is sent to the agent immediately, with the file
   list. Without: the file is announced and attached to the user's next
-  message as "Пользователь прислал файлы …".
+  message as "The user sent files …".
 
 ---
 
@@ -632,7 +641,7 @@ At most 5 files are sent automatically per turn.
 - Timeouts: `STT_TIMEOUT` (default 60 s) bounds download plus transcription;
   the HTTP client timeout is `STT_TIMEOUT`, or 2 minutes when it is 0.
 - The transcript (≤3500 characters) is shown in an expandable quote. If a
-  "✍ Свой ответ" question is pending, the transcript is its answer.
+  "✍ Type answer" question is pending, the transcript is its answer.
   Otherwise the agent receives the transcript with a note that it may contain
   recognition errors, the caption if any, and an instruction to restate the
   task in one or two sentences and wait for confirmation.
@@ -685,7 +694,7 @@ At most 5 files are sent automatically per turn.
   recorded messages older than 1 hour are deleted. Messages that cannot be
   deleted (already gone, or too old for the Bot API) are forgotten; after a
   temporary failure they are retried. One sweep is limited to 1 minute.
-- 🧽 Очистить тему deletes all recorded messages now.
+- 🧽 Clear topic deletes all recorded messages now.
 - Sending a new message with buttons to the control topic deletes the previous
   one (only the latest menu stays; `kv.control_menu_msg`).
 - The card and the rights notice are never swept.
@@ -693,14 +702,14 @@ At most 5 files are sent automatically per turn.
 ### 9.5 Session topics
 
 - Created with the node's colour and the active icon.
-- Renamed once, from `новая сессия` to the first message's first line.
+- Renamed once, from `new session` to the first message's first line.
 - On close: a topic with no recorded usage and no Claude session id is
   deleted (closed instead if deletion fails); otherwise it gets the closed
   icon and is closed. Titles are not changed on close (every rename posts a
   service message).
 - Failed state sets the failed icon; leaving it restores the active icon.
 
-### 9.6 🧹 Cleanup
+### 9.6 🧹 Clean up
 
 Candidates: closed sessions whose topic still exists, and failed sessions with
 no recorded turn. The button lists up to 10 and asks for confirmation; on
@@ -744,7 +753,7 @@ errors are ignored. Current migrations add `sessions.profile` and
 |---|---|
 | Sessions and their topics, Claude session ids, modes, profiles | Running Claude processes (resumed on the next message) |
 | Approve mode, Always rules | Inbox messages not yet sent to the agent |
-| Usage, rate limit windows and notice dedup | Pending permission prompts and questions (their buttons answer "Запрос устарел") |
+| Usage, rate limit windows and notice dedup | Pending permission prompts and questions (their buttons answer "Request expired") |
 | Control topic, card and menu message ids, sweep list | Turn summaries' buttons, `/ls` buttons, subagent panels, `/history` lists |
 | Group setup flags | Sudo grants, context snapshots, "sent file" hashes |
 
@@ -830,7 +839,7 @@ All messages use HTML parse mode with link previews disabled.
 | `ph:<project>` | control | History of one project |
 | `m:<action>` | control | Main menu action: `projects`, `history`, `sessions`, `newproject`, `approve`, `help`, `menu` |
 | `ap:<mode>` | control | Set approve mode: `all`, `nosudo`, `ask` |
-| `cl:ask` / `cl:sweep` / `cl:yes` / `cl:no` | control (card) | 🧹 Cleanup: list / 🧽 sweep now / confirm / cancel |
+| `cl:ask` / `cl:sweep` / `cl:yes` / `cl:no` | control (card) | 🧹 Clean up: list / 🧽 sweep now / confirm / cancel |
 
 Callbacks are tried in this order: permission broker (`p`, `q`), session
 buttons, `h:`, control-topic buttons. `cl:` with a numeric key is a session
@@ -855,6 +864,7 @@ together.
 | `ALLOWED_USER_IDS` | comma-separated positive int64 | — (required) | Telegram user ids allowed to control the node, e.g. `123456789`. |
 | `GROUP_CHAT_ID` | negative int64 | — (required) | The forum supergroup, e.g. `-1001234567890`. |
 | `NODE_NAME` | string | hostname | Node name in the control topic name and card. |
+| `BOT_LANGUAGE` | `en` / `ru` | `en` | Interface language (§12.1). |
 | `PROJECTS_ROOT` | absolute path | — (required) | Folder containing project folders, e.g. `/home/user/projects`. |
 | `DB_PATH` | path | `./data/tgsync.db` | SQLite database. |
 | `MAX_PARALLEL_SESSIONS` | int ≥1 | `3` | Turns running at once on this node (additionally one per project). |
@@ -895,6 +905,26 @@ projects:
 
 Fixed internal values: status edit interval 3 s; topic probe every 10 min;
 card refresh 10 s; sweep every 1 min for messages older than 1 h.
+
+### 12.1 Interface language
+
+`BOT_LANGUAGE` selects the language of everything the node says: messages,
+buttons, callback toasts, the command menu, the bot and group descriptions,
+the output of `tgsync check` and `tgsync profile`, and errors shown to the
+user. Accepted values are `en` and `ru` (case-insensitive); an empty value
+means `en`; any other value is a configuration error. The language is read
+once at startup, so a change takes effect after a restart. `tgsync profile`
+must be run again to update the bot's descriptions. The node sets the
+group description only when the group has none, so an existing one is
+changed by hand in Telegram.
+
+All strings live in `internal/i18n`: each entry holds both languages, and a
+test checks that both are present and use the same format verbs. Plural
+forms follow each language's rules (English: one/other; Russian:
+one/few/many). Things that are not text stay the same in both languages:
+command names, callback data, environment variable names, log keys.
+Messages already posted keep the language they were sent in. What the agent
+writes is not translated: Claude answers in the language of the task.
 
 ---
 
@@ -963,7 +993,7 @@ context, usage, approve, close, control, help.
 |---|---|
 | Node restart | `Restore` loads all non-closed sessions. Sessions that were not `idle`, `failed` or `interrupted` become `interrupted` with a notice. No Claude process is started until the next message, which resumes the session by id. |
 | Claude process exits during a turn | Open prompts and sudo grants of the topic are withdrawn, running subagents marked stopped, pending text posted, state `failed` with a notice. Queued messages are rescheduled; the next message starts a new process that resumes the session. |
-| Claude fails to start / a prompt cannot be sent | The message is put back at the front of the inbox, state `failed`, notice "Сообщение сохранено и уйдёт вместе со следующим". |
+| Claude fails to start / a prompt cannot be sent | The message is put back at the front of the inbox, state `failed`, notice "The message is saved and will go out with the next one." |
 | Idle process | Closed after `IDLE_TIMEOUT` (not while subagents run); resumed on the next message. |
 | Long silence / long turn | `STALL_WARN` notice with ⏳/⏹; `MAX_TURN_DURATION` interrupts (retried on the next tick if the interrupt fails). |
 | Session topic deleted | Detected on any Telegram call (`ErrTopicGone`) or by the 10-minute probe of idle sessions (re-applying the same topic name). The session is closed: process stopped, subagents stopped, prompts withdrawn, state `closed`, `topic_deleted_at` set. |
@@ -1019,7 +1049,7 @@ the node folder; run `tgsync check` before registering the service.
   abandons a single request mid-turn, its message keeps live buttons until
   the turn ends; pressing them then has no effect on the agent.
 - **After a node restart**, prompts posted before the restart keep their
-  buttons; pressing them only answers "Запрос устарел".
+  buttons; pressing them only answers "Request expired".
 - **History reads only the tail.** `/history` reads the custom title and last
   prompt from the last 256 KiB of each transcript; the subagent result reads
   the last 8 MiB of its transcript. Older values beyond those windows are not

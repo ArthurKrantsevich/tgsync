@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 func TestMain(m *testing.M) {
@@ -19,6 +21,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	CacheDir = func() (string, error) { return cache, nil }
+	// Tests assert the Russian texts.
+	i18n.Set(i18n.RU)
 	code := m.Run()
 	os.RemoveAll(cache)
 	os.Exit(code)

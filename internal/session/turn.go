@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/files"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/telegram"
 )
@@ -51,8 +52,7 @@ func (m *Manager) snapshot(ctx context.Context, s *sess, what string) string {
 			if len(msg) > 300 {
 				msg = append(msg[:299], '…')
 			}
-			m.say(ctx, s, "⚠️ Не удалось снять git-снимок проекта, сводка хода будет без статистики и кнопок: <code>"+
-				render.Escape(string(msg))+"</code>", true)
+			m.say(ctx, s, i18n.T("session.turn.snapshot_failed", render.Escape(string(msg))), true)
 		}
 	}
 	return tree
@@ -80,11 +80,11 @@ func statText(stats []files.Stat, rel string) string {
 		}
 		switch {
 		case st.Gone:
-			return " (удалён)"
+			return i18n.T("session.turn.stat_gone")
 		case st.Binary:
-			return " (бинарный)"
+			return i18n.T("session.turn.stat_binary")
 		case st.New:
-			return fmt.Sprintf(" +%d (новый)", st.Added)
+			return i18n.T("session.turn.stat_new", st.Added)
 		case st.Added > 0 || st.Deleted > 0:
 			return fmt.Sprintf(" +%d −%d", st.Added, st.Deleted)
 		}
@@ -96,9 +96,9 @@ func statText(stats []files.Stat, rel string) string {
 func turnRow(key string, commit bool) []telegram.Button {
 	row := []telegram.Button{{Text: "🔀 Diff", Data: "td:" + key}}
 	if commit {
-		row = append(row, telegram.Button{Text: "✅ Коммит", Data: "tc:" + key})
+		row = append(row, telegram.Button{Text: i18n.T("session.turn.btn_commit"), Data: "tc:" + key})
 	}
-	return append(row, telegram.Button{Text: "↩ Откатить", Data: "tr:" + key})
+	return append(row, telegram.Button{Text: i18n.T("session.turn.btn_rollback"), Data: "tr:" + key})
 }
 
 // turnButton handles the turn summary buttons and returns the callback toast.
@@ -108,26 +108,26 @@ func (m *Manager) turnButton(ctx context.Context, u telegram.Update, kind, key s
 	s := m.sessions[ref.thread]
 	m.mu.Unlock()
 	if !known || s == nil || ref.thread != u.ThreadID {
-		return "Кнопка устарела"
+		return i18n.T("session.button_expired")
 	}
 	switch kind {
 	case "td":
 		rels := m.unprotected(s.row.Cwd, ref.files)
 		if len(rels) == 0 {
-			return "Нет файлов для diff"
+			return i18n.T("session.turn.no_diff_files")
 		}
 		diff, err := files.TurnDiff(ctx, s.row.Cwd, ref.base, ref.end, rels)
 		if err != nil {
 			return alertText(err)
 		}
 		name := fmt.Sprintf("turn-%d.diff", ref.turn)
-		if _, err := m.d.API.SendDocument(ctx, ref.thread, name, []byte(diff), "🔀 Изменения хода", true); err != nil {
+		if _, err := m.d.API.SendDocument(ctx, ref.thread, name, []byte(diff), i18n.T("session.turn.diff_caption"), true); err != nil {
 			m.telegramFailed(s, "send turn diff", err)
 			return alertText(err)
 		}
 		return ""
 	case "tn":
-		_ = m.d.API.EditMessage(ctx, u.MessageID, "Откат отменён.", nil)
+		_ = m.d.API.EditMessage(ctx, u.MessageID, i18n.T("session.turn.rollback_cancel"), nil)
 		return ""
 	}
 	// Commit and rollback act on the latest turn of an idle session only.
@@ -140,10 +140,10 @@ func (m *Manager) turnButton(ctx context.Context, u telegram.Update, kind, key s
 	}
 	m.mu.Unlock()
 	if !latest {
-		return "Кнопка устарела"
+		return i18n.T("session.button_expired")
 	}
 	if busy {
-		return "Агент работает — дождись конца хода"
+		return i18n.T("session.turn.busy")
 	}
 	switch kind {
 	case "tc":
@@ -151,7 +151,7 @@ func (m *Manager) turnButton(ctx context.Context, u telegram.Update, kind, key s
 		ref = m.turnRefs[key]
 		if ref.committed {
 			m.mu.Unlock()
-			return "Коммит уже отправлен"
+			return i18n.T("session.turn.commit_sent")
 		}
 		kb := append(telegram.Keyboard(nil), ref.kb...)
 		kb[len(kb)-1] = turnRow(key, false)
@@ -160,16 +160,16 @@ func (m *Manager) turnButton(ctx context.Context, u telegram.Update, kind, key s
 		m.mu.Unlock()
 		_ = m.d.API.EditMessage(ctx, ref.msg, ref.html, kb)
 		list := strings.Join(ref.files, ", ")
-		prompt := "Закоммить изменения прошлого хода: " + list + ". Состояние до хода — git-дерево " + ref.base +
-			": `git diff " + ref.base + " -- <файл>` покажет только правки хода. Если в этих файлах есть и более ранние" +
-			" незакоммиченные правки, спроси пользователя, коммитить ли их. Сообщение — в стиле репозитория."
+		prompt := "Commit the changes of the previous turn: " + list + ". The state before the turn is git tree " + ref.base +
+			": `git diff " + ref.base + " -- <file>` shows only the turn's edits. If these files also have earlier" +
+			" uncommitted edits, ask the user whether to commit them. Write the message in the repository's style."
 		if err := m.Message(ctx, ref.thread, prompt); err != nil {
 			return alertText(err)
 		}
-		return "Задача на коммит отправлена"
+		return i18n.T("session.turn.commit_queued")
 	case "tr":
-		kb := telegram.Keyboard{{{Text: "Да, откатить", Data: "ty:" + key}, {Text: "Нет", Data: "tn:" + key}}}
-		text := fmt.Sprintf("↩ Откатить %d файлов к началу хода? Новые файлы будут удалены.", len(ref.files))
+		kb := telegram.Keyboard{{{Text: i18n.T("session.turn.btn_yes"), Data: "ty:" + key}, {Text: i18n.T("session.turn.btn_no"), Data: "tn:" + key}}}
+		text := i18n.N("session.turn.n.rollback_ask", len(ref.files), len(ref.files))
 		if _, err := m.d.API.SendMessage(ctx, ref.thread, text, kb, true); err != nil {
 			m.telegramFailed(s, "send rollback confirmation", err)
 			return alertText(err)
@@ -177,14 +177,14 @@ func (m *Manager) turnButton(ctx context.Context, u telegram.Update, kind, key s
 		return ""
 	case "ty":
 		res, err := files.Restore(ctx, s.row.Cwd, ref.base, ref.end, ref.files)
-		text := fmt.Sprintf("↩ Откачено %d", len(res.Restored))
+		text := i18n.N("session.turn.n.rolled_back", len(res.Restored), len(res.Restored))
 		for _, part := range []struct {
 			label string
 			list  []string
 		}{
-			{"не тронуты, изменены после хода", res.Changed},
-			{"оставлены новые файлы, в ходе менялся .gitignore", res.Kept},
-			{"пропущены, git их игнорирует", res.Ignored},
+			{i18n.T("session.turn.kept_changed"), res.Changed},
+			{i18n.T("session.turn.kept_new"), res.Kept},
+			{i18n.T("session.turn.kept_ignored"), res.Ignored},
 		} {
 			if len(part.list) > 0 {
 				text += "\n" + part.label + ": " + render.Escape(strings.Join(part.list, ", "))
@@ -198,14 +198,14 @@ func (m *Manager) turnButton(ctx context.Context, u telegram.Update, kind, key s
 		m.mu.Lock()
 		delete(m.turnRefs, key)
 		if len(res.Restored) > 0 {
-			s.rollbackNote = "(Пользователь откатил изменения прошлого хода в файлах: " + strings.Join(res.Restored, ", ") + ".)"
+			s.rollbackNote = "(The user rolled back the previous turn's changes in these files: " + strings.Join(res.Restored, ", ") + ".)"
 		}
 		s.endRestore()
 		m.mu.Unlock()
 		m.schedule(ctx) // a message that came during the rollback
 		return ""
 	}
-	return "Кнопка устарела"
+	return i18n.T("session.button_expired")
 }
 
 // beginRestore marks a rollback in progress. Callers hold m.mu.

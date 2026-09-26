@@ -3,6 +3,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/ArthurKrantsevich/tgsync/internal/group"
 	"github.com/ArthurKrantsevich/tgsync/internal/history"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/permissions"
 	"github.com/ArthurKrantsevich/tgsync/internal/projects"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
@@ -51,7 +53,7 @@ type Router struct {
 	picks      map[string]pick      // history buttons: h:<n> → session
 	attaching  map[string]bool      // Claude session ids being attached now
 	pressed    map[string]time.Time // recent presses: msgID:data → when
-	askingName bool                 // ➕ Новый проект: the next text is the name
+	askingName bool                 // "New project" button: the next text is the name
 }
 
 // maxPicks is how many /history buttons stay valid; older ones say the list
@@ -64,37 +66,11 @@ type pick struct {
 	entry        history.Entry
 }
 
-const helpSession = `<b>Это тема сессии агента</b>
-Пиши задачу или ответ — агент получит. Пока он работает, сообщение ждёт в очереди.
-Кинь файл или скриншот — агент прочитает (подпись станет задачей).
-🎙 Голосовое — агент перескажет, как понял задачу, и дождётся «да».
+// helpSession is the /help text of a session topic.
+func helpSession() string { return i18n.T("router.help.session") }
 
-⏹ или /stop — прервать ход
-/ls — файлы проекта · /file путь — прислать файл
-/mode — режим разрешений · /skills — команды агента
-/agents — субагенты: ход работы, ⏹ остановить, 📄 результат
-/context — заполненность контекста · /usage — расход сессии
-/close — закрыть сессию
-Остальные /команды уходят агенту как есть.`
-
-const helpControl = `<b>tgsync — пульт для Claude Code</b>
-
-<b>Быстрый старт</b>
-/menu — всё кнопками
-/new проект задача — новая сессия сразу с задачей
-
-<b>Здесь, в теме ноды</b>
-/projects · /newproject · /sessions · /history · /profiles · /usage
-/approve — автоодобрение команд агента
-
-<b>В теме сессии</b>
-Пиши — агент работает. Файл или скриншот — он прочитает.
-🎙 Голосовое — агент перескажет задачу и дождётся «да».
-⏹ или /stop — прервать · /close — закрыть
-/ls — файлы · /file путь — прислать файл
-/mode — режим · /skills — команды агента
-
-Тема ноды пропала? Напиши /control в общей теме.`
+// helpControl is the help text of the control topic.
+func helpControl() string { return i18n.T("router.help.control") }
 
 var (
 	cmdRe  = regexp.MustCompile(`(?s)^/([A-Za-z_]+)(?:@\S+)?\s*(.*)$`)
@@ -157,7 +133,7 @@ func (r *Router) general(ctx context.Context, text string) {
 		r.warn(ctx, 0, err)
 		return
 	}
-	r.reply(ctx, 0, fmt.Sprintf(`🖥 Управление нодой: <a href="%s">%s</a>`, topics.Link(r.ChatID, id), render.Escape(r.Topics.Node())))
+	r.reply(ctx, 0, i18n.T("router.control_link", topics.Link(r.ChatID, id), render.Escape(r.Topics.Node())))
 }
 
 func (r *Router) reply(ctx context.Context, thread int, html string) {
@@ -190,7 +166,7 @@ func (r *Router) control(ctx context.Context, text string) {
 	case "start", "menu":
 		r.menu(ctx)
 	case "cancel":
-		r.reply(ctx, r.Topics.Control(), "Отменено.")
+		r.reply(ctx, r.Topics.Control(), i18n.T("router.cancelled"))
 	case "projects":
 		r.listProjects(ctx)
 	case "newproject":
@@ -217,7 +193,7 @@ func (r *Router) control(ctx context.Context, text string) {
 	case "approve":
 		r.approveMenu(ctx)
 	default:
-		r.reply(ctx, r.Topics.Control(), helpControl)
+		r.reply(ctx, r.Topics.Control(), helpControl())
 	}
 }
 
@@ -232,7 +208,7 @@ func (r *Router) newSession(ctx context.Context, project, task, profile string) 
 		r.warn(ctx, r.Topics.Control(), err)
 		return
 	}
-	r.reply(ctx, r.Topics.Control(), fmt.Sprintf(`🧵 Сессия создана: <a href="%s">%s</a>`,
+	r.reply(ctx, r.Topics.Control(), i18n.T("router.session_created",
 		topics.Link(r.ChatID, thread), render.Escape(project)))
 }
 
@@ -243,7 +219,7 @@ func (r *Router) listProjects(ctx context.Context) {
 		return
 	}
 	if len(names) == 0 {
-		r.reply(ctx, r.Topics.Control(), "Проектов нет. Создай: /newproject &lt;name&gt;")
+		r.reply(ctx, r.Topics.Control(), i18n.T("router.no_projects"))
 		return
 	}
 	var kb telegram.Keyboard
@@ -252,17 +228,17 @@ func (r *Router) listProjects(ctx context.Context) {
 			kb = append(kb, []telegram.Button{{Text: "📁 " + n, Data: "pr:" + n}})
 		}
 	}
-	kb = append(kb, []telegram.Button{{Text: "➕ Новый проект", Data: "m:newproject"}, {Text: "🏠 Меню", Data: "m:menu"}})
-	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), "📁 <b>Проекты</b> — выбери проект", kb, false)
+	kb = append(kb, []telegram.Button{{Text: i18n.T("router.btn.new_project"), Data: "m:newproject"}, {Text: i18n.T("router.btn.menu"), Data: "m:menu"}})
+	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), i18n.T("router.projects_title"), kb, false)
 }
 
 func (r *Router) listSessions(ctx context.Context) {
 	rows := r.Sessions.List()
 	if len(rows) == 0 {
-		r.reply(ctx, r.Topics.Control(), "Открытых сессий нет.")
+		r.reply(ctx, r.Topics.Control(), i18n.T("router.no_sessions"))
 		return
 	}
-	lines := []string{"<b>Сессии</b>"}
+	lines := []string{i18n.T("router.sessions_title")}
 	for _, s := range rows {
 		lines = append(lines, fmt.Sprintf(`%s <a href="%s">%s · %s</a>`, render.StateEmoji(s.State),
 			topics.Link(r.ChatID, s.ThreadID), render.Escape(s.Project), render.Escape(s.Title)))
@@ -298,7 +274,7 @@ func (r *Router) callback(ctx context.Context, u telegram.Update) {
 				err = r.Group.Cancel(ctx, u.MessageID)
 			}
 			if err != nil {
-				toast = clip("Ошибка: "+err.Error(), 190) // callback toasts hold 200 characters
+				toast = clip(i18n.T("router.error_toast", err.Error()), 190) // callback toasts hold 200 characters
 			}
 			_ = r.API.AnswerCallback(ctx, u.CallbackID, toast)
 			return
@@ -306,7 +282,7 @@ func (r *Router) callback(ctx context.Context, u telegram.Update) {
 		switch kind {
 		case "new", "pr", "ph", "m", "ap":
 			if kind == "new" && !r.claimPress(u.MessageID, u.CallbackData) {
-				_ = r.API.AnswerCallback(ctx, u.CallbackID, "Сессия уже создаётся")
+				_ = r.API.AnswerCallback(ctx, u.CallbackID, i18n.T("router.session_creating"))
 				return
 			}
 			// Answer first: Telegram drops answers that come after a slow action.
@@ -326,7 +302,7 @@ func (r *Router) callback(ctx context.Context, u telegram.Update) {
 			return
 		}
 	}
-	_ = r.API.AnswerCallback(ctx, u.CallbackID, "Неизвестная кнопка")
+	_ = r.API.AnswerCallback(ctx, u.CallbackID, i18n.T("router.unknown_button"))
 }
 
 // pressGuard is how long a press of a button is remembered, so that a double
@@ -386,7 +362,7 @@ func (r *Router) session(ctx context.Context, thread, msgID int, text string) {
 			r.report(ctx, thread, r.Sessions.SendFile(ctx, thread, args))
 			return
 		case "help":
-			r.reply(ctx, thread, helpSession)
+			r.reply(ctx, thread, helpSession())
 			return
 		}
 	}
@@ -428,7 +404,7 @@ func (r *Router) history(ctx context.Context, project string) {
 		found = append(found, picks...)
 	}
 	if len(found) == 0 {
-		r.reply(ctx, r.Topics.Control(), "Сессий не найдено.")
+		r.reply(ctx, r.Topics.Control(), i18n.T("router.history.none"))
 		return
 	}
 	sort.Slice(found, func(i, j int) bool { return found[i].entry.Updated.After(found[j].entry.Updated) })
@@ -436,7 +412,7 @@ func (r *Router) history(ctx context.Context, project string) {
 		found = found[:10]
 	}
 	now := time.Now()
-	lines := []string{"<b>Сессии Claude Code</b> — нажми номер, чтобы продолжить в Telegram"}
+	lines := []string{i18n.T("router.history.title")}
 	var kb telegram.Keyboard
 	r.mu.Lock()
 	if r.picks == nil {
@@ -452,7 +428,7 @@ func (r *Router) history(ctx context.Context, project string) {
 		}
 		line := fmt.Sprintf("%d. %s <b>%s</b> · %s · %s", i+1, icon, render.Escape(clip(p.entry.Title, 60)), render.Escape(p.project), ago(now.Sub(p.entry.Updated)))
 		if p.entry.Active(now) {
-			line += " · 🟢 активна"
+			line += i18n.T("router.history.active")
 		}
 		if p.entry.LastPrompt != "" && p.entry.LastPrompt != p.entry.Title {
 			line += "\n   ↳ " + render.Escape(clip(p.entry.LastPrompt, 80))
@@ -499,11 +475,11 @@ func (r *Router) attach(ctx context.Context, callbackID, key string) {
 	}
 	r.mu.Unlock()
 	if !ok {
-		_ = r.API.AnswerCallback(ctx, callbackID, "Список устарел, повтори /history")
+		_ = r.API.AnswerCallback(ctx, callbackID, i18n.T("router.history.stale"))
 		return
 	}
 	if busy {
-		_ = r.API.AnswerCallback(ctx, callbackID, "Сессия уже подключается")
+		_ = r.API.AnswerCallback(ctx, callbackID, i18n.T("router.history.busy"))
 		return
 	}
 	defer func() {
@@ -513,7 +489,7 @@ func (r *Router) attach(ctx context.Context, callbackID, key string) {
 	}()
 	_ = r.API.AnswerCallback(ctx, callbackID, "")
 	if thread, open := r.Sessions.FindByClaudeID(p.entry.ID); open {
-		r.reply(ctx, r.Topics.Control(), fmt.Sprintf(`Сессия уже открыта: <a href="%s">%s</a>`, topics.Link(r.ChatID, thread), render.Escape(p.project)))
+		r.reply(ctx, r.Topics.Control(), i18n.T("router.history.open", topics.Link(r.ChatID, thread), render.Escape(p.project)))
 		return
 	}
 	fork := p.entry.Active(time.Now())
@@ -522,16 +498,16 @@ func (r *Router) attach(ctx context.Context, callbackID, key string) {
 		r.warn(ctx, r.Topics.Control(), err)
 		return
 	}
-	text := "🔗 Подключено к сессии «" + render.Escape(clip(p.entry.Title, 100)) + "»"
+	text := i18n.T("router.attach.title", render.Escape(clip(p.entry.Title, 100)))
 	if p.entry.LastPrompt != "" {
-		text += "\nПоследний запрос: " + render.Escape(clip(p.entry.LastPrompt, 300))
+		text += i18n.T("router.attach.last", render.Escape(clip(p.entry.LastPrompt, 300)))
 	}
 	if fork {
-		text += "\n\n🟢 Сессия сейчас активна в другом месте, поэтому здесь продолжится её копия: исходная сессия не изменится."
+		text += i18n.T("router.attach.fork")
 	}
-	text += "\n\nНапиши сообщение, чтобы продолжить."
+	text += i18n.T("router.attach.continue")
 	r.reply(ctx, thread, text)
-	r.reply(ctx, r.Topics.Control(), fmt.Sprintf(`🔗 Сессия подключена: <a href="%s">%s</a>`, topics.Link(r.ChatID, thread), render.Escape(p.project)))
+	r.reply(ctx, r.Topics.Control(), i18n.T("router.attach.link", topics.Link(r.ChatID, thread), render.Escape(p.project)))
 }
 
 func clip(s string, n int) string {
@@ -545,13 +521,16 @@ func clip(s string, n int) string {
 func ago(d time.Duration) string {
 	switch {
 	case d < time.Minute:
-		return "только что"
+		return i18n.T("router.ago.now")
 	case d < time.Hour:
-		return fmt.Sprintf("%d мин назад", int(d.Minutes()))
+		n := int(d.Minutes())
+		return i18n.N("router.ago.n.minutes", n, n)
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%d ч назад", int(d.Hours()))
+		n := int(d.Hours())
+		return i18n.N("router.ago.n.hours", n, n)
 	default:
-		return fmt.Sprintf("%d дн назад", int(d.Hours()/24))
+		n := int(d.Hours() / 24)
+		return i18n.N("router.ago.n.days", n, n)
 	}
 }
 
@@ -575,8 +554,7 @@ func (r *Router) listProfiles(ctx context.Context) {
 	if r.ProfileNames != nil {
 		names = r.ProfileNames()
 	}
-	r.reply(ctx, r.Topics.Control(), "<b>Профили</b>: "+render.Escape(strings.Join(names, ", "))+
-		"\nНовая сессия с профилем: /new &lt;project&gt; --profile &lt;имя&gt; [задача]\nПрофили задаются в profiles.yaml рядом с .env.")
+	r.reply(ctx, r.Topics.Control(), i18n.T("router.profiles", render.Escape(strings.Join(names, ", "))))
 }
 
 // file handles a document or photo the user sent: in a session topic it is
@@ -584,13 +562,13 @@ func (r *Router) listProfiles(ctx context.Context) {
 func (r *Router) file(ctx context.Context, u telegram.Update) {
 	switch {
 	case u.ThreadID == r.Topics.Control():
-		r.reply(ctx, u.ThreadID, "Файлы принимаются в теме сессии: там агент сможет их прочитать.")
+		r.reply(ctx, u.ThreadID, i18n.T("router.file.control"))
 		return
 	case !r.Sessions.Owns(u.ThreadID):
 		return
 	}
 	if u.File.Size > telegram.MaxDownload {
-		r.reply(ctx, u.ThreadID, "⚠️ Файл больше 20 МБ — Telegram не даёт ботам скачивать такие. Положи его в проект другим способом.")
+		r.reply(ctx, u.ThreadID, i18n.T("router.file.too_big"))
 		return
 	}
 	data, err := r.API.DownloadFile(ctx, u.File.ID)
@@ -605,41 +583,38 @@ func (r *Router) file(ctx context.Context, u telegram.Update) {
 // for the whole group, so session commands are marked.
 func Commands() []telegram.Command {
 	return []telegram.Command{
-		{Name: "menu", Description: "Главное меню ноды"},
-		{Name: "projects", Description: "Проекты"},
-		{Name: "new", Description: "Новая сессия: /new проект задача"},
-		{Name: "history", Description: "Продолжить сессию из терминала или приложения"},
-		{Name: "sessions", Description: "Открытые сессии"},
-		{Name: "newproject", Description: "Создать проект"},
-		{Name: "profiles", Description: "Профили плагинов"},
-		{Name: "stop", Description: "В сессии: прервать ход"},
-		{Name: "mode", Description: "В сессии: режим разрешений"},
-		{Name: "ls", Description: "В сессии: файлы проекта"},
-		{Name: "file", Description: "В сессии: прислать файл, /file путь"},
-		{Name: "skills", Description: "В сессии: команды агента"},
-		{Name: "agents", Description: "В сессии: субагенты"},
-		{Name: "context", Description: "В сессии: заполненность контекста"},
-		{Name: "usage", Description: "Расход Claude и лимиты подписки"},
-		{Name: "approve", Description: "Автоодобрение команд агента"},
-		{Name: "close", Description: "В сессии: закрыть сессию"},
-		{Name: "control", Description: "В общей теме: найти тему управления"},
-		{Name: "help", Description: "Справка"},
+		{Name: "menu", Description: i18n.T("router.cmd.menu")},
+		{Name: "projects", Description: i18n.T("router.cmd.projects")},
+		{Name: "new", Description: i18n.T("router.cmd.new")},
+		{Name: "history", Description: i18n.T("router.cmd.history")},
+		{Name: "sessions", Description: i18n.T("router.cmd.sessions")},
+		{Name: "newproject", Description: i18n.T("router.cmd.newproject")},
+		{Name: "profiles", Description: i18n.T("router.cmd.profiles")},
+		{Name: "stop", Description: i18n.T("router.cmd.stop")},
+		{Name: "mode", Description: i18n.T("router.cmd.mode")},
+		{Name: "ls", Description: i18n.T("router.cmd.ls")},
+		{Name: "file", Description: i18n.T("router.cmd.file")},
+		{Name: "skills", Description: i18n.T("router.cmd.skills")},
+		{Name: "agents", Description: i18n.T("router.cmd.agents")},
+		{Name: "context", Description: i18n.T("router.cmd.context")},
+		{Name: "usage", Description: i18n.T("router.cmd.usage")},
+		{Name: "approve", Description: i18n.T("router.cmd.approve")},
+		{Name: "close", Description: i18n.T("router.cmd.close")},
+		{Name: "control", Description: i18n.T("router.cmd.control")},
+		{Name: "help", Description: i18n.T("router.cmd.help")},
 	}
 }
 
-var menuKeyboard = telegram.Keyboard{
-	{{Text: "📁 Проекты", Data: "m:projects"}, {Text: "🕘 История", Data: "m:history"}},
-	{{Text: "🧵 Сессии", Data: "m:sessions"}, {Text: "➕ Новый проект", Data: "m:newproject"}},
-	{{Text: "🔐 Автоодобрение", Data: "m:approve"}, {Text: "❓ Справка", Data: "m:help"}},
+func menuKeyboard() telegram.Keyboard {
+	return telegram.Keyboard{
+		{{Text: i18n.T("router.btn.projects"), Data: "m:projects"}, {Text: i18n.T("router.btn.history"), Data: "m:history"}},
+		{{Text: i18n.T("router.btn.sessions"), Data: "m:sessions"}, {Text: i18n.T("router.btn.new_project"), Data: "m:newproject"}},
+		{{Text: i18n.T("router.btn.approve"), Data: "m:approve"}, {Text: i18n.T("router.btn.help"), Data: "m:help"}},
+	}
 }
 
 func approveView(mode string) (string, telegram.Keyboard) {
-	text := "🔐 <b>Автоодобрение команд</b>\nСейчас: <b>" + permissions.ApproveLabel(mode) + "</b>\n\n" +
-		"🟢 Всё сам — любые команды без вопросов, включая sudo\n" +
-		"🟡 Всё, кроме sudo — на sudo придёт кнопка\n" +
-		"🔴 По запросу — кнопка на каждую команду\n\n" +
-		"Вопросы агента и команды, которые обращаются к папке tgsync, приходят кнопкой в любом режиме. " +
-		"Но в режимах 🟢 и 🟡 агент может запустить любой код от твоего пользователя, так что это не стена: служебные файлы tgsync там защищены не полностью."
+	text := i18n.T("router.approve", permissions.ApproveLabel(mode))
 	var kb telegram.Keyboard
 	for _, m := range permissions.ApproveModes {
 		label := permissions.ApproveLabel(m)
@@ -666,7 +641,7 @@ func (r *Router) setApprove(ctx context.Context, msgID int, mode string) {
 }
 
 func (r *Router) menu(ctx context.Context) {
-	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), "🖥 <b>"+render.Escape(r.Topics.Node())+"</b> — что делаем?", menuKeyboard, false)
+	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), i18n.T("router.menu", render.Escape(r.Topics.Node())), menuKeyboard(), false)
 }
 
 func (r *Router) menuAction(ctx context.Context, action string) {
@@ -682,7 +657,7 @@ func (r *Router) menuAction(ctx context.Context, action string) {
 	case "approve":
 		r.approveMenu(ctx)
 	case "help":
-		r.reply(ctx, r.Topics.Control(), helpControl)
+		r.reply(ctx, r.Topics.Control(), helpControl())
 	default:
 		r.menu(ctx)
 	}
@@ -694,37 +669,37 @@ func (r *Router) projectMenu(ctx context.Context, name string) {
 		return
 	}
 	kb := telegram.Keyboard{
-		{{Text: "▶ Новая сессия", Data: "new:" + name}, {Text: "🕘 История", Data: "ph:" + name}},
-		{{Text: "⬅ Проекты", Data: "m:projects"}},
+		{{Text: i18n.T("router.btn.new_session"), Data: "new:" + name}, {Text: i18n.T("router.btn.history"), Data: "ph:" + name}},
+		{{Text: i18n.T("router.btn.back_projects"), Data: "m:projects"}},
 	}
-	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), "📁 <b>"+render.Escape(name)+"</b>\nНовая сессия — задачу напишешь в её теме. С задачей сразу: /new "+render.Escape(name)+" задача", kb, false)
+	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), i18n.T("router.project_menu", render.Escape(name), render.Escape(name)), kb, false)
 }
 
 func (r *Router) askProjectName(ctx context.Context) {
 	r.mu.Lock()
 	r.askingName = true
 	r.mu.Unlock()
-	r.reply(ctx, r.Topics.Control(), "➕ Как назвать проект? Отправь имя сообщением: латиница, цифры, «.», «_», «-». Отмена — /cancel.")
+	r.reply(ctx, r.Topics.Control(), i18n.T("router.ask_project_name"))
 }
 
 func (r *Router) createProject(ctx context.Context, name string) bool {
 	name = strings.TrimSpace(name)
 	dir, err := r.Projects.Create(ctx, name)
 	if err != nil {
-		r.warnMenu(ctx, fmt.Errorf("%v. Попробуй другое имя или /cancel", err))
+		r.warnMenu(ctx, errors.New(i18n.T("router.bad_project_name", err)))
 		return false
 	}
-	row := []telegram.Button{{Text: "🏠 Меню", Data: "m:menu"}}
+	row := []telegram.Button{{Text: i18n.T("router.btn.menu"), Data: "m:menu"}}
 	if data := "new:" + name; len(data) <= 64 { // Telegram rejects longer button data
-		row = append([]telegram.Button{{Text: "▶ Новая сессия", Data: data}}, row...)
+		row = append([]telegram.Button{{Text: i18n.T("router.btn.new_session"), Data: data}}, row...)
 	}
 	kb := telegram.Keyboard{row}
-	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), "📁 Создан проект <b>"+render.Escape(name)+"</b>\n"+render.Escape(dir), kb, false)
+	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), i18n.T("router.project_created", render.Escape(name), render.Escape(dir)), kb, false)
 	return true
 }
 
 // warnMenu reports an error in the control topic with a way forward.
 func (r *Router) warnMenu(ctx context.Context, err error) {
-	kb := telegram.Keyboard{{{Text: "📁 Проекты", Data: "m:projects"}, {Text: "🏠 Меню", Data: "m:menu"}}}
+	kb := telegram.Keyboard{{{Text: i18n.T("router.btn.projects"), Data: "m:projects"}, {Text: i18n.T("router.btn.menu"), Data: "m:menu"}}}
 	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), "⚠️ "+render.Escape(err.Error()), kb, false)
 }

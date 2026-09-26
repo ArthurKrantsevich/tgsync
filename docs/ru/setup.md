@@ -158,15 +158,16 @@ mkdir tgsync && tar xzf tgsync_*_linux_amd64.tar.gz -C tgsync && cd tgsync
    ALLOWED_USER_IDS=123456789
    GROUP_CHAT_ID=-1001234567890
    PROJECTS_ROOT=/home/user/projects
+   BOT_LANGUAGE=ru
    ```
-   `PROJECTS_ROOT` — абсолютный путь; каждая вложенная папка — проект.
+   `PROJECTS_ROOT` — абсолютный путь; каждая вложенная папка — проект. `BOT_LANGUAGE=ru` включает русский язык бота, `tgsync check` и скриптов установки; без этой строки всё будет на английском (`en` — по умолчанию).
 3. По желанию задай `NODE_NAME` (по умолчанию hostname) и просмотри остальное в `.env.example`.
 4. Проверь до установки:
    ```bash
    make check          # соберёт ./bin/tgsync и выполнит tgsync check
    ```
 
-Так выглядит успешная проверка:
+Так выглядит успешная проверка с `BOT_LANGUAGE=ru` (с `en` те же строки выводятся по-английски):
 
 ```
 tgsync dev · папка /home/user/tgsync
@@ -347,7 +348,7 @@ tgsync profile
 
 ### 6.3 Проверка
 
-1. `tgsync check` заканчивается строкой `Всё в порядке.`
+1. `tgsync check` заканчивается строкой `Всё в порядке.` (с `BOT_LANGUAGE=en` — `All good.`)
 2. Сервис работает:
    - Linux: `systemctl --user status tgsync`
    - macOS: `launchctl print gui/$(id -u)/dev.tgsync`

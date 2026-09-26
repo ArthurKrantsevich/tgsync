@@ -10,11 +10,33 @@ $Conf = Join-Path $env:APPDATA 'tgsync'
 $Log = Join-Path $Conf 'tgsync.log'
 $TaskName = 'tgsync'
 
+# Interface language of the messages below: BOT_LANGUAGE from the environment,
+# else the last BOT_LANGUAGE= line of the first given .env that sets it, else en.
+function Get-UiLang([string[]]$Files) {
+    $v = $env:BOT_LANGUAGE
+    foreach ($f in $Files) {
+        if ($v) { break }
+        if (Test-Path -LiteralPath $f -PathType Leaf) {
+            $line = Get-Content -LiteralPath $f -ErrorAction SilentlyContinue |
+                Where-Object { $_ -match '^\s*(export\s+)?BOT_LANGUAGE\s*=' } | Select-Object -Last 1
+            if ($line) { $v = (($line -replace '^[^=]*=', '') -replace '#.*', '') -replace "[\s`"']", '' }
+        }
+    }
+    if ($v -and $v.Trim() -ieq 'ru') { 'ru' } else { 'en' }
+}
+# Msg "English" "Русский" prints the line in the interface language.
+function Msg([string]$En, [string]$Ru) {
+    if ($script:UiLang -eq 'ru') { Write-Host $Ru } else { Write-Host $En }
+}
+# The node's .env wins; before the first install it may still sit in the repository.
+$UiLang = Get-UiLang @((Join-Path $Conf '.env'), (Join-Path $Repo '.env'))
+
 # Another tgsync (for example bin\tgsync.exe run in a terminal) would poll with
 # the same token (409 Conflict).
 $other = Get-Process -Name tgsync -ErrorAction SilentlyContinue | Where-Object { $_.Path -ne $Bin }
 if ($other) {
-    Write-Host "! Запущен другой процесс tgsync (pid $($other.Id -join ', ')). Останови его и запусти установку ещё раз."
+    Msg "! Another tgsync process is running (pid $($other.Id -join ', ')). Stop it and run the install again." `
+        "! Запущен другой процесс tgsync (pid $($other.Id -join ', ')). Останови его и запусти установку ещё раз."
     exit 1
 }
 
@@ -40,13 +62,14 @@ function Stop-Node([string]$Bin) {
 
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not (Stop-Node $Bin)) {
-    Write-Host "! $Bin занят другим процессом. Закрой его и запусти установку ещё раз."
+    Msg "! $Bin is in use by another process. Close it and run the install again." `
+        "! $Bin занят другим процессом. Закрой его и запусти установку ещё раз."
     exit 1
 }
 
 New-Item -ItemType Directory -Force -Path $BinDir, (Join-Path $Conf 'data') | Out-Null
 if ((Get-Command go -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $Repo 'go.mod'))) {
-    Write-Host "→ сборка $Bin"
+    Msg "→ building $Bin" "→ сборка $Bin"
     Push-Location $Repo
     try { go build -o $Bin ./cmd/tgsync } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -54,7 +77,7 @@ if ((Get-Command go -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $R
     # Release archive: the binary sits next to scripts\.
     Copy-Item (Join-Path $Repo 'tgsync.exe') $Bin -Force
 } else {
-    Write-Host '! Нет Go и нет tgsync.exe рядом со скриптом.'
+    Msg '! Neither Go nor tgsync.exe next to the script was found.' '! Нет Go и нет tgsync.exe рядом со скриптом.'
     exit 1
 }
 
@@ -63,20 +86,20 @@ if (-not (Test-Path $envFile)) {
     if (Test-Path (Join-Path $Repo '.env')) {
         # Moved, not copied: a second copy of the token must not stay in a project folder.
         Move-Item (Join-Path $Repo '.env') $envFile
-        Write-Host "→ .env перенесён в $Conf"
+        Msg "→ .env moved to $Conf" "→ .env перенесён в $Conf"
     } else {
         Copy-Item (Join-Path $Repo '.env.example') $envFile
-        Write-Host "Заполни $envFile и запусти установку ещё раз."
+        Msg "Fill in $envFile and run the install again." "Заполни $envFile и запусти установку ещё раз."
         exit 1
     }
 }
 
-Write-Host '→ проверка установки'
+Msg '→ checking the setup' '→ проверка установки'
 $env:TGSYNC_HOME = $Conf
 Push-Location $Conf
 try { & $Bin check } finally { Pop-Location; Remove-Item Env:TGSYNC_HOME }
 if ($LASTEXITCODE -ne 0) {
-    Write-Host 'Исправь ошибки выше и запусти установку ещё раз.'
+    Msg 'Fix the errors above and run the install again.' 'Исправь ошибки выше и запусти установку ещё раз.'
     exit 1
 }
 
@@ -97,6 +120,6 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
     -Description 'tgsync: Claude Code over Telegram' -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
-Write-Host "→ задача запущена: Get-ScheduledTask $TaskName"
-Write-Host "  логи: Get-Content -Wait '$Log'"
-Write-Host '  нода работает, пока ты залогинен в Windows'
+Msg "→ task started: Get-ScheduledTask $TaskName" "→ задача запущена: Get-ScheduledTask $TaskName"
+Msg "  logs: Get-Content -Wait '$Log'" "  логи: Get-Content -Wait '$Log'"
+Msg '  the node runs while you are logged in to Windows' '  нода работает, пока ты залогинен в Windows'

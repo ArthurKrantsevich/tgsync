@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // defaultTimeout bounds the HTTP call whenever Client has no HTTP client of
@@ -76,7 +78,7 @@ func (c *Client) Transcribe(ctx context.Context, audio io.Reader, filename strin
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", fmt.Errorf("чтение ответа: %w", err)
+		return "", fmt.Errorf(i18n.T("stt.read"), err)
 	}
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(strings.TrimSpace(string(raw)), 200))
@@ -85,7 +87,7 @@ func (c *Client) Transcribe(ctx context.Context, audio io.Reader, filename strin
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("непонятный ответ сервера: %w", err)
+		return "", fmt.Errorf(i18n.T("stt.bad_json"), err)
 	}
 	return strings.TrimSpace(out.Text), nil
 }

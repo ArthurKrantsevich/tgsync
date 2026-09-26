@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/render"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/sudo"
@@ -60,7 +61,7 @@ type pending struct {
 	done     chan agent.PermissionDecision
 	finished bool
 	sudo     bool
-	noAlways bool // no «Всегда»: sudo or a command reaching tgsync's folder
+	noAlways bool // no "Always": sudo or a command reaching tgsync's folder
 	created  time.Time
 	reminded time.Time
 
@@ -107,7 +108,7 @@ func (b *Broker) CanUseTool(si SessionInfo) agent.CanUseToolFunc {
 		}
 		in := Input{Tool: req.ToolName, Args: req.Input, ProjectDir: si.ProjectDir, Protected: si.Protected, Rules: rules}
 		d, reason := Evaluate(in)
-		isSudo := d == Deny && reason == SudoOffReason && b.sudo != nil && b.sudo.Enabled()
+		isSudo := d == Deny && reason == SudoOffReason() && b.sudo != nil && b.sudo.Enabled()
 		switch {
 		case d == Allow:
 			return agent.PermissionDecision{Allow: true}
@@ -128,25 +129,25 @@ func (b *Broker) CanUseTool(si SessionInfo) agent.CanUseToolFunc {
 		}
 		text := permissionText(req, si.ProjectDir)
 		if isSudo {
-			text = "🔐 <b>sudo</b> — команда выполнится с правами root\n" + text
+			text = i18n.T("perm.sudo_root") + text
 		}
 		if confirm {
-			text = "⚠️ " + reachReason + "\n" + text
+			text = "⚠️ " + i18n.T("perm.reach") + "\n" + text
 		}
 		p := b.add(si, req, func(p *pending) { p.sudo, p.noAlways, p.text = isSudo, isSudo || confirm, text })
 		kb := telegram.Keyboard{{
-			{Text: "✅ Разрешить", Data: "p:" + p.id + ":a"},
-			{Text: "❌ Отклонить", Data: "p:" + p.id + ":d"},
+			{Text: i18n.T("perm.btn.allow"), Data: "p:" + p.id + ":a"},
+			{Text: i18n.T("perm.btn.deny"), Data: "p:" + p.id + ":d"},
 		}}
 		if r, ok := AlwaysRule(req.ToolName, req.Input, si.ProjectDir); ok && !p.noAlways {
 			label := r.Pattern
 			switch {
 			case fileWrite[r.Tool]:
-				label = r.Tool + " в " + clip(r.Pattern, 60)
+				label = i18n.T("perm.always_in", r.Tool, clip(r.Pattern, 60))
 			case label == "":
 				label = r.Tool
 			}
-			kb = append(kb, []telegram.Button{{Text: "♾ Всегда: " + label, Data: "p:" + p.id + ":A"}})
+			kb = append(kb, []telegram.Button{{Text: i18n.T("perm.btn.always", label), Data: "p:" + p.id + ":A"}})
 		}
 		id, err := b.api.SendMessage(ctx, si.ThreadID, p.text, kb, false)
 		if err != nil {
@@ -197,7 +198,7 @@ func (b *Broker) wait(ctx context.Context, si SessionInfo, p *pending) agent.Per
 		b.mu.Unlock()
 		b.remove(p)
 		if msgID != 0 {
-			_ = b.api.EditMessage(context.Background(), msgID, text+"\n\n⌛ Сессия завершена, запрос снят", nil)
+			_ = b.api.EditMessage(context.Background(), msgID, text+"\n\n"+i18n.T("perm.session_ended"), nil)
 		}
 		return deny("session closed")
 	}
@@ -243,7 +244,7 @@ func (b *Broker) CancelThread(ctx context.Context, thread int) {
 		text, msgID := p.text, p.msgID
 		b.mu.Unlock()
 		if b.finish(p, deny("request withdrawn: the turn has ended")) && msgID != 0 {
-			_ = b.api.EditMessage(ctx, msgID, text+"\n\n⌛ Запрос снят", nil)
+			_ = b.api.EditMessage(ctx, msgID, text+"\n\n"+i18n.T("perm.withdrawn"), nil)
 		}
 	}
 }
@@ -258,7 +259,7 @@ func (b *Broker) HandleCallback(ctx context.Context, u telegram.Update) bool {
 	p := b.pending[parts[1]]
 	b.mu.Unlock()
 	if p == nil || p.threadID != u.ThreadID {
-		_ = b.api.AnswerCallback(ctx, u.CallbackID, "Запрос устарел")
+		_ = b.api.AnswerCallback(ctx, u.CallbackID, i18n.T("perm.stale"))
 		return true
 	}
 	alert := ""
@@ -276,11 +277,11 @@ func (b *Broker) onPermission(ctx context.Context, p *pending, action string) {
 	var note string
 	switch action {
 	case "a":
-		d, note = agent.PermissionDecision{Allow: true}, "✅ Разрешено"
+		d, note = agent.PermissionDecision{Allow: true}, i18n.T("perm.allowed")
 		if p.sudo {
 			var ok bool
 			if d, ok = b.grantSudo(p.threadID, p.input); !ok {
-				note = "⚠️ Команду не удалось разобрать, отклонено"
+				note = i18n.T("perm.unparsed")
 			}
 		}
 	case "A":
@@ -289,13 +290,13 @@ func (b *Broker) onPermission(ctx context.Context, p *pending, action string) {
 		}
 		if r, ok := AlwaysRule(p.tool, p.input, p.dir); ok {
 			if err := b.st.AddRule(ctx, p.project, r); err != nil {
-				note = "⚠️ правило не сохранено: " + render.Escape(err.Error()) + "\n"
+				note = i18n.T("perm.rule_not_saved", render.Escape(err.Error()))
 			}
 		}
-		d, note = agent.PermissionDecision{Allow: true}, note+"✅ Разрешено всегда"
+		d, note = agent.PermissionDecision{Allow: true}, note+i18n.T("perm.allowed_always")
 	case "d":
-		d = deny("Пользователь отклонил это действие. Причину он может написать следующим сообщением.")
-		note = "❌ Отклонено. Причину можно написать следующим сообщением."
+		d = deny(i18n.T("perm.agent.denied"))
+		note = i18n.T("perm.denied")
 	default:
 		return
 	}
@@ -316,7 +317,7 @@ func (b *Broker) onQuestion(ctx context.Context, p *pending, args []string) stri
 	b.mu.Lock()
 	if err != nil || p.finished || qi != p.qi || qi >= len(p.questions) {
 		b.mu.Unlock()
-		return "Запрос устарел"
+		return i18n.T("perm.stale")
 	}
 	q := p.questions[qi]
 	action := args[1]
@@ -350,7 +351,7 @@ func (b *Broker) onQuestion(ctx context.Context, p *pending, args []string) stri
 		}
 		b.mu.Unlock()
 		if len(chosen) == 0 {
-			return "Выбери хотя бы один вариант"
+			return i18n.T("perm.pick_one")
 		}
 		b.answer(ctx, p, qi, strings.Join(chosen, ", "))
 		return ""
@@ -358,14 +359,14 @@ func (b *Broker) onQuestion(ctx context.Context, p *pending, args []string) stri
 		b.awaiting[p.threadID] = p
 		text, msgID := p.text, p.msgID
 		b.mu.Unlock()
-		_ = b.api.EditMessage(ctx, msgID, text+"\n\n✍ Жду ответ следующим сообщением", nil)
+		_ = b.api.EditMessage(ctx, msgID, text+"\n\n"+i18n.T("perm.awaiting_answer"), nil)
 		return ""
 	}
 	b.mu.Unlock()
 	return ""
 }
 
-// HandleText takes a typed answer after the «Свой ответ» button.
+// HandleText takes a typed answer after the own-answer button.
 func (b *Broker) HandleText(ctx context.Context, threadID int, text string) bool {
 	b.mu.Lock()
 	p := b.awaiting[threadID]
@@ -440,7 +441,7 @@ func questionView(p *pending) (string, telegram.Keyboard) {
 	}
 	text += render.Escape(q.Text)
 	if len(p.questions) > 1 {
-		text += fmt.Sprintf("\n<i>Вопрос %d из %d</i>", p.qi+1, len(p.questions))
+		text += i18n.T("perm.question_of", p.qi+1, len(p.questions))
 	}
 	prefix := fmt.Sprintf("q:%s:%d:", p.id, p.qi)
 	var kb telegram.Keyboard
@@ -455,9 +456,9 @@ func questionView(p *pending) (string, telegram.Keyboard) {
 			kb = append(kb, []telegram.Button{{Text: o, Data: fmt.Sprintf("%so:%d", prefix, i)}})
 		}
 	}
-	last := []telegram.Button{{Text: "✍ Свой ответ", Data: prefix + "w"}}
+	last := []telegram.Button{{Text: i18n.T("perm.btn.own_answer"), Data: prefix + "w"}}
 	if q.Multi {
-		last = append(last, telegram.Button{Text: "Готово", Data: prefix + "ok"})
+		last = append(last, telegram.Button{Text: i18n.T("perm.btn.done"), Data: prefix + "ok"})
 	}
 	return text, append(kb, last)
 }
@@ -491,7 +492,7 @@ func parseQuestions(input map[string]any) []question {
 
 func permissionText(req agent.PermissionRequest, dir string) string {
 	var b strings.Builder
-	b.WriteString("🔐 <b>Запрос разрешения</b>: " + render.Escape(req.ToolName))
+	b.WriteString(i18n.T("perm.request", render.Escape(req.ToolName)))
 	if req.Title != "" {
 		b.WriteString("\n" + render.Escape(req.Title))
 	}
@@ -539,7 +540,7 @@ func (b *Broker) AskPassword(ctx context.Context, thread int) (string, error) {
 	b.mu.Lock()
 	if _, busy := b.passwords[thread]; busy {
 		b.mu.Unlock()
-		return "", errors.New("уже жду пароль в этой теме")
+		return "", errors.New(i18n.T("perm.pw.busy"))
 	}
 	b.passwords[thread] = w
 	b.mu.Unlock()
@@ -551,21 +552,21 @@ func (b *Broker) AskPassword(ctx context.Context, thread int) (string, error) {
 		b.mu.Unlock()
 	}()
 	ch := w.ch
-	msgID, err := b.api.SendMessage(ctx, thread, "🔑 Нужен пароль sudo. Отправь его следующим сообщением — я сразу удалю его из чата.", nil, false)
+	msgID, err := b.api.SendMessage(ctx, thread, i18n.T("perm.pw.ask"), nil, false)
 	if err != nil {
 		return "", err
 	}
 	select {
 	case got := <-ch:
-		note := "🔑 Пароль получен, сообщение удалено."
+		note := i18n.T("perm.pw.got")
 		if !got.deleted {
-			note = "🔑 Пароль получен, но удалить сообщение не удалось — удали его вручную и дай боту право «Удаление сообщений»."
+			note = i18n.T("perm.pw.got_undeleted")
 		}
 		_ = b.api.EditMessage(ctx, msgID, note, nil)
 		return got.password, nil
 	case <-ctx.Done():
-		_ = b.api.EditMessage(context.Background(), msgID, "⌛ Пароль не получен, sudo-команда не выполнена.", nil)
-		return "", errors.New("пароль не получен вовремя")
+		_ = b.api.EditMessage(context.Background(), msgID, i18n.T("perm.pw.timeout_note"), nil)
+		return "", errors.New(i18n.T("perm.pw.timeout"))
 	}
 }
 
@@ -619,6 +620,6 @@ func (b *Broker) Remind(ctx context.Context, now time.Time, every time.Duration)
 	}
 	b.mu.Unlock()
 	for _, thread := range due {
-		_, _ = b.api.SendMessage(ctx, thread, "⏰ Жду твоего ответа на запрос выше.", nil, false)
+		_, _ = b.api.SendMessage(ctx, thread, i18n.T("perm.remind"), nil, false)
 	}
 }

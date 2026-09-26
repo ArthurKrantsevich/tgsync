@@ -3,8 +3,11 @@ package render
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 // Tokens formats a token count: 950, 142K, 1.2M.
@@ -19,9 +22,7 @@ func Tokens(n int) string {
 	}
 }
 
-var weekdays = [...]string{"вс", "пн", "вт", "ср", "чт", "пт", "сб"}
-
-// ResetTime says when a limit resets: "в 15:04" today, "пн 15:04" within a
+// ResetTime says when a limit resets: "at 15:04" today, "Mon 15:04" within a
 // week, "02.01 15:04" later, in the node's local zone.
 func ResetTime(t, now time.Time) string {
 	t, now = t.Local(), now.Local()
@@ -29,42 +30,42 @@ func ResetTime(t, now time.Time) string {
 	y2, m2, d2 := now.Date()
 	switch {
 	case y1 == y2 && m1 == m2 && d1 == d2:
-		return "в " + t.Format("15:04")
+		return i18n.T("render.reset.today", t.Format("15:04"))
 	case t.Sub(now) < 6*24*time.Hour: // a weekday name must not read as today
 
-		return weekdays[t.Weekday()] + " " + t.Format("15:04")
+		return i18n.T("render.weekday."+strconv.Itoa(int(t.Weekday()))) + " " + t.Format("15:04")
 	default:
 		return t.Format("02.01 15:04")
 	}
 }
 
-var windowNames = map[string]string{
-	"five_hour": "5 часов", "seven_day": "7 дней", "seven_day_opus": "7 дней Opus",
-	"seven_day_sonnet": "7 дней Sonnet", "overage": "сверх лимита",
+// knownWindows are the limit windows with a catalog name (render.window.<name>).
+var knownWindows = map[string]bool{
+	"five_hour": true, "seven_day": true, "seven_day_opus": true, "seven_day_sonnet": true, "overage": true,
 }
 
 // WindowName names a subscription limit window.
 func WindowName(w string) string {
-	if n, ok := windowNames[w]; ok {
-		return n
+	if knownWindows[w] {
+		return i18n.T("render.window." + w)
 	}
 	if w == "" {
-		return "подписка"
+		return i18n.T("render.window.subscription")
 	}
 	return w
 }
 
-// LimitLine is one window of the subscription, e.g. "5 часов: 72% · сброс в 14:00".
+// LimitLine is one window of the subscription, e.g. "5 hours: 72% · resets at 14:00".
 func LimitLine(window string, utilization float64, resets, now time.Time) string {
 	if !resets.IsZero() && !resets.After(now) {
-		return Escape(WindowName(window)) + ": сброшен"
+		return i18n.T("render.limit.reset", Escape(WindowName(window)))
 	}
-	line := Escape(WindowName(window)) + ": нет данных"
+	line := i18n.T("render.limit.nodata", Escape(WindowName(window)))
 	if utilization >= 0 {
 		line = fmt.Sprintf("%s: %d%%", Escape(WindowName(window)), int(utilization*100+0.5))
 	}
 	if !resets.IsZero() {
-		line += " · сброс " + ResetTime(resets, now)
+		line += i18n.T("render.limit.resets", ResetTime(resets, now))
 	}
 	return line
 }
@@ -88,9 +89,12 @@ type ContextView struct {
 	At             time.Time
 }
 
-var categoryNames = map[string]string{
-	"messages": "сообщения", "system prompt": "системный промпт", "system tools": "инструменты",
-	"mcp tools": "MCP", "memory files": "память", "custom agents": "агенты", "skills": "skills",
+// categoryKeys holds the catalog keys of the context categories the CLI reports.
+var categoryKeys = map[string]string{
+	"messages": "render.ctx.cat.messages", "system prompt": "render.ctx.cat.system_prompt",
+	"system tools": "render.ctx.cat.system_tools", "mcp tools": "render.ctx.cat.mcp_tools",
+	"memory files": "render.ctx.cat.memory_files", "custom agents": "render.ctx.cat.custom_agents",
+	"skills": "render.ctx.cat.skills",
 }
 
 // hiddenCategories are not content.
@@ -98,7 +102,7 @@ var hiddenCategories = map[string]bool{"free space": true, "autocompact buffer":
 
 // ContextText renders /context.
 func ContextText(c ContextView) string {
-	head := "🧠 <b>Контекст</b>"
+	head := i18n.T("render.ctx.head")
 	if c.Model != "" {
 		head += " · " + Escape(c.Model)
 	}
@@ -113,8 +117,8 @@ func ContextText(c ContextView) string {
 			continue
 		}
 		name := cat.Name
-		if n, ok := categoryNames[key]; ok {
-			name = n
+		if k, ok := categoryKeys[key]; ok {
+			name = i18n.T(k)
 		}
 		parts = append(parts, Escape(name)+" "+Tokens(cat.Tokens))
 		if len(parts) == 5 {
@@ -124,20 +128,20 @@ func ContextText(c ContextView) string {
 	if len(parts) > 0 {
 		lines = append(lines, strings.Join(parts, " · "))
 	}
-	auto := "Авто-сжатие: выкл"
+	auto := i18n.T("render.ctx.auto_off")
 	if c.AutoCompact {
-		auto = "Авто-сжатие: вкл"
+		auto = i18n.T("render.ctx.auto_on")
 		if c.AutoCompactPct > 0 {
-			auto += fmt.Sprintf(", при %d%%", c.AutoCompactPct)
+			auto += i18n.T("render.ctx.auto_at", c.AutoCompactPct)
 		}
 	}
 	lines = append(lines, auto)
 	if c.Stale {
-		why := "процесс сейчас не запущен"
+		why := i18n.T("render.ctx.stale_down")
 		if c.ProcessUp {
-			why = "процесс не ответил"
+			why = i18n.T("render.ctx.stale_silent")
 		}
-		lines = append(lines, "<i>(на конец хода "+c.At.Local().Format("15:04")+", "+why+")</i>")
+		lines = append(lines, i18n.T("render.ctx.stale", c.At.Local().Format("15:04"), why))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -160,15 +164,15 @@ type LimitView struct {
 func UsageText(limits []LimitView, today, week []ProjectTotal, now time.Time) string {
 	var lines []string
 	if len(limits) == 0 {
-		lines = append(lines, "📊 Подписка: данных нет — они приходят вместе с ходами.")
+		lines = append(lines, i18n.T("render.usage.nodata"))
 	} else {
-		lines = append(lines, "📊 <b>Подписка</b>")
+		lines = append(lines, i18n.T("render.usage.head"))
 		for _, l := range limits {
 			lines = append(lines, LimitLine(l.Window, l.Utilization, l.ResetsAt, now))
 		}
 	}
-	lines = append(lines, "", period("Сегодня", today), "", period("7 дней", week), "",
-		"<i>≈ — оценка CLI по ценам API; на подписке деньги не списываются.</i>")
+	lines = append(lines, "", period(i18n.T("render.usage.today"), today), "", period(i18n.T("render.usage.week"), week), "",
+		i18n.T("render.usage.footnote"))
 	return strings.Join(lines, "\n")
 }
 
@@ -178,14 +182,14 @@ func period(title string, ps []ProjectTotal) string {
 	for _, p := range ps {
 		tokens, cost = tokens+p.Tokens, cost+p.CostUSD
 	}
-	lines := []string{fmt.Sprintf("<b>%s</b>: %s ток. · ≈$%.2f", title, Tokens(tokens), cost)}
+	lines := []string{i18n.T("render.usage.period", title, Tokens(tokens), cost)}
 	for i, p := range ps {
 		if i == 5 {
 			rest, restCost := 0, 0.0
 			for _, q := range ps[5:] {
 				rest, restCost = rest+q.Tokens, restCost+q.CostUSD
 			}
-			lines = append(lines, fmt.Sprintf("  прочие %s · ≈$%.2f", Tokens(rest), restCost))
+			lines = append(lines, i18n.T("render.usage.others", Tokens(rest), restCost))
 			break
 		}
 		lines = append(lines, fmt.Sprintf("  %s %s · ≈$%.2f", Escape(p.Project), Tokens(p.Tokens), p.CostUSD))
@@ -195,9 +199,9 @@ func period(title string, ps []ProjectTotal) string {
 
 // SessionUsageText renders /usage in a session topic.
 func SessionUsageText(turns, tokens, cacheRead int, costUSD float64, contextLine string) string {
-	text := fmt.Sprintf("📊 <b>Эта сессия</b>: ходов %d · %s ток.", turns, Tokens(tokens))
+	text := i18n.N("render.usage.n.session", turns, turns, Tokens(tokens))
 	if cacheRead > 0 {
-		text += " (+" + Tokens(cacheRead) + " из кеша)"
+		text += i18n.T("render.usage.cache", Tokens(cacheRead))
 	}
 	text += fmt.Sprintf(" · ≈$%.2f", costUSD)
 	if contextLine != "" {

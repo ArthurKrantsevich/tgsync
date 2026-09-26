@@ -46,7 +46,7 @@ func TestCleanupConfirm(t *testing.T) {
 		t.Fatalf("toast=%q err=%v", toast, err)
 	}
 	ask := lastControl(g, api)
-	if !strings.Contains(ask.HTML, "Удалить 1 тем") || !strings.Contains(ask.HTML, "demo · old") {
+	if !strings.Contains(ask.HTML, "Удалить 1 тему?") || !strings.Contains(ask.HTML, "demo · old") {
 		t.Fatalf("ask: %s", ask.HTML)
 	}
 	if err := g.Confirm(ctx, ask.ID); err != nil {
@@ -59,7 +59,7 @@ func TestCleanupConfirm(t *testing.T) {
 		t.Fatalf("forget: %v", forgotten)
 	}
 	for _, m := range api.Messages(g.Topics.Control()) {
-		if m.ID == ask.ID && (!strings.Contains(m.HTML, "Удалено 1") || m.Keyboard != nil) {
+		if m.ID == ask.ID && (!strings.Contains(m.HTML, "Удалена 1 тема") || m.Keyboard != nil) {
 			t.Fatalf("result: %+v", m)
 		}
 	}

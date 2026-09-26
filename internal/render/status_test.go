@@ -30,6 +30,7 @@ func TestToolLine(t *testing.T) {
 		want string
 	}{
 		{"Bash", map[string]any{"command": "go test ./...\n"}, "▶ go test ./..."},
+		{"Bash", map[string]any{"command": "go test ./...", "description": "Прогоняю тесты\nпакета"}, "▶ Прогоняю тесты пакета"},
 		{"Edit", map[string]any{"file_path": osPath("/w/demo/src/auth.go")}, "📝 Edit " + filepath.FromSlash("src/auth.go")},
 		{"Write", map[string]any{"file_path": osPath("/etc/hosts")}, "📝 Write " + osPath("/etc/hosts")},
 		{"Read", map[string]any{"file_path": osPath("/w/demo/a.go")}, "📖 Read a.go"},

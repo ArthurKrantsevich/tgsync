@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/agent"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 )
 
 var stateEmoji = map[string]string{
@@ -35,6 +36,11 @@ func ToolLine(name string, in map[string]any, cwd string) string {
 	}
 	switch name {
 	case "Bash":
+		// The agent's own description ("Running the tests") reads better
+		// than the command itself.
+		if d := strings.TrimSpace(str("description")); d != "" {
+			return "▶ " + oneLine(d, 120)
+		}
 		return "▶ " + oneLine(str("command"), 120)
 	case "Edit", "MultiEdit", "Write":
 		return "📝 " + name + " " + rel(str("file_path"))
@@ -55,9 +61,9 @@ func ToolLine(name string, in map[string]any, cwd string) string {
 		}
 		return "🤖 " + oneLine(d, 80)
 	case "TodoWrite":
-		return "🗒 План задач обновлён"
+		return i18n.T("render.tool.todo")
 	case "AskUserQuestion":
-		return "❓ Вопрос пользователю"
+		return i18n.T("render.tool.ask")
 	}
 	return "🔧 " + name
 }
@@ -75,7 +81,7 @@ type Status struct {
 
 // StatusText renders the status message of a turn.
 func StatusText(s Status, now time.Time) string {
-	lines := []string{fmt.Sprintf("%s %s · шаг %d · последнее событие %s назад",
+	lines := []string{i18n.T("render.status.head",
 		StateEmoji(s.State), Duration(now.Sub(s.Started)), s.Step, Duration(now.Sub(s.LastEvent)))}
 	if s.Note != "" {
 		lines = append(lines, "💬 <i>"+Escape(s.Note)+"</i>")
@@ -96,9 +102,9 @@ func ResultText(r agent.ResultInfo, steps int, took time.Duration) string {
 		if r.Text != "" {
 			msg += ": " + r.Text
 		}
-		return "⚠️ Ход завершился с ошибкой · " + Escape(oneLine(msg, 500))
+		return i18n.T("render.result.error", Escape(oneLine(msg, 500)))
 	}
-	parts := []string{"✅ Ход завершён", Duration(took), fmt.Sprintf("шагов: %d", steps)}
+	parts := []string{i18n.T("render.result.done"), Duration(took), i18n.T("render.result.steps", steps)}
 	if r.CostUSD > 0 {
 		parts = append(parts, fmt.Sprintf("$%.2f", r.CostUSD))
 	}
@@ -114,7 +120,7 @@ func NoteLine(s string) string {
 
 // InterruptedText renders the end of a turn the node interrupted.
 func InterruptedText(steps int, took time.Duration) string {
-	return fmt.Sprintf("⏹ Ход прерван · %s · шагов: %d", Duration(took), steps)
+	return i18n.T("render.result.interrupt", Duration(took), steps)
 }
 
 // Duration formats d as 12s, 3m05s or 1h05m.

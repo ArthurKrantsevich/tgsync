@@ -8,12 +8,13 @@ import (
 	"strings"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/files"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"mvdan.cc/sh/v3/syntax"
 )
 
 // reachReason is shown on the prompt of a command that may reach tgsync's
 // own folder (.env with the bot token and the sudo password, the database).
-const reachReason = "команда может обращаться к папке tgsync (.env, база) — нужна кнопка в любом режиме"
+func reachReason() string { return i18n.T("perm.reach") }
 
 // reach finds shell commands that may name tgsync's folder in a spelling
 // the literal path check misses: ~, ~user and $HOME, known variables,
@@ -22,7 +23,7 @@ const reachReason = "команда может обращаться к папк�
 // to a shell or an interpreter.
 //
 // This is defense in depth, not a boundary: the agent runs as the same OS
-// user, so in the «Всё сам» and «Всё, кроме sudo» modes, or through any
+// user, so in the "all" and "all but sudo" approve modes, or through any
 // program it writes and runs, it can still read these files. The check only
 // makes the obvious spellings need a tap.
 type reach struct {

@@ -114,8 +114,8 @@ func TestTurnCommitButton(t *testing.T) {
 	}
 	testutil.Eventually(t, "commit prompt", func() bool {
 		sent := s.Sent()
-		return len(sent) == 2 && strings.HasPrefix(sent[1], "Закоммить изменения прошлого хода: a.go.") &&
-			strings.Contains(sent[1], "git diff ") && strings.Contains(sent[1], "спроси пользователя")
+		return len(sent) == 2 && strings.HasPrefix(sent[1], "Commit the changes of the previous turn: a.go.") &&
+			strings.Contains(sent[1], "git diff ") && strings.Contains(sent[1], "ask the user")
 	})
 	if _, ok := e.api.Button(thread, "✅ Коммит"); ok {
 		t.Fatal("commit button must be gone after the press")
@@ -132,12 +132,12 @@ func TestTurnRollback(t *testing.T) {
 	write(t, dir, "n.go", "new\n")
 	agentTurn(s, dir, "a.go", "n.go")
 	pressTurn(t, e, thread, "↩ Откатить")
-	e.hasMessage(t, thread, "↩ Откатить 2 файлов к началу хода? Новые файлы будут удалены.")
+	e.hasMessage(t, thread, "↩ Откатить 2 файла к началу хода? Новые файлы будут удалены.")
 	if b, _ := os.ReadFile(filepath.Join(dir, "a.go")); string(b) != "agent\n" {
 		t.Fatal("nothing may change before the confirmation")
 	}
 	pressTurn(t, e, thread, "Да, откатить")
-	e.hasMessage(t, thread, "↩ Откачено 2")
+	e.hasMessage(t, thread, "↩ Откачено 2 файла")
 	if b, _ := os.ReadFile(filepath.Join(dir, "a.go")); string(b) != "mine\n" {
 		t.Fatalf("a.go = %q", b)
 	}
@@ -150,7 +150,7 @@ func TestTurnRollback(t *testing.T) {
 	_ = e.m.Message(ctx, thread, "дальше")
 	testutil.Eventually(t, "rollback note", func() bool {
 		sent := s.Sent()
-		return len(sent) == 2 && sent[1] == "(Пользователь откатил изменения прошлого хода в файлах: a.go, n.go.)\n\nдальше"
+		return len(sent) == 2 && sent[1] == "(The user rolled back the previous turn's changes in these files: a.go, n.go.)\n\nдальше"
 	})
 }
 
@@ -254,7 +254,7 @@ func TestTurnCommitOnce(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	n := 0
 	for _, p := range s.Sent() {
-		if strings.HasPrefix(p, "Закоммить") {
+		if strings.HasPrefix(p, "Commit the changes") {
 			n++
 		}
 	}

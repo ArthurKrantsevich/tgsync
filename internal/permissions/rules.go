@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ArthurKrantsevich/tgsync/internal/files"
+	"github.com/ArthurKrantsevich/tgsync/internal/i18n"
 	"github.com/ArthurKrantsevich/tgsync/internal/store"
 	"github.com/ArthurKrantsevich/tgsync/internal/sudo"
 )
@@ -20,7 +21,7 @@ const (
 	Ask Decision = iota
 	Allow
 	Deny
-	// Confirm needs a button in every approve mode, without «Всегда», and
+	// Confirm needs a button in every approve mode, without "Always", and
 	// saved rules do not apply to it.
 	Confirm
 )
@@ -47,18 +48,17 @@ var (
 
 // SudoOffReason is the deny message for sudo commands; the broker replaces
 // it with an approval prompt when sudo is enabled.
-var SudoOffReason = sudoOffReason(runtime.GOOS)
+func SudoOffReason() string { return sudoOffReason(runtime.GOOS) }
 
 func sudoOffReason(goos string) string {
 	if goos == "windows" {
-		return "sudo недоступен на Windows. Попроси пользователя выполнить команду вручную."
+		return i18n.T("perm.agent.sudo_windows")
 	}
-	return "sudo недоступен: на этой ноде SUDO_MODE=off. Попроси пользователя выполнить команду вручную."
+	return i18n.T("perm.agent.sudo_off")
 }
 
 // sudoWrappedReason refuses sudo that the broker cannot hand the password to.
-const sudoWrappedReason = "tgsync: sudo поддерживается только прямым вызовом (sudo команда …), " +
-	"не через env, xargs, find -exec, sh -c и подобные обёртки. Перепиши команду."
+func sudoWrappedReason() string { return i18n.T("perm.agent.sudo_wrapped") }
 
 // sudoRefusal is the deny message for a sudo command sudo.RewriteCommand
 // refused (err) or found no direct sudo call in.
@@ -66,7 +66,7 @@ func sudoRefusal(err error) string {
 	if err != nil && strings.HasPrefix(err.Error(), "tgsync:") {
 		return err.Error()
 	}
-	return sudoWrappedReason
+	return sudoWrappedReason()
 }
 
 // Evaluate applies the automatic rules of docs/en/spec.md §5.3. Commands with
@@ -77,17 +77,17 @@ func Evaluate(in Input) (Decision, string) {
 	if in.Tool == "Bash" {
 		for _, p := range in.Protected {
 			if p != "" && mentions(cmd, p) {
-				return Deny, "доступ к служебным файлам tgsync запрещён"
+				return Deny, i18n.T("perm.agent.protected")
 			}
 		}
 		// Parsed, not matched: the word sudo in a heredoc or a commit
 		// message is not a sudo call. The broker asks about sudo commands
 		// that may reach tgsync's folder in every mode (see reachesTgsync).
 		if sudo.Uses(cmd) {
-			return Deny, SudoOffReason
+			return Deny, SudoOffReason()
 		}
 		if reachesTgsync(in) {
-			return Confirm, reachReason
+			return Confirm, reachReason()
 		}
 	}
 	// Path arguments of file tools: ~ expanded, links followed.
@@ -95,15 +95,15 @@ func Evaluate(in Input) (Decision, string) {
 	if path != "" {
 		path = toolPath(in, path)
 		if touchesTgsync(in.Protected, path) {
-			return Deny, "доступ к служебным файлам tgsync запрещён"
+			return Deny, i18n.T("perm.agent.protected")
 		}
 	}
 	if sp, _ := in.Args["path"].(string); sp != "" && touchesTgsync(in.Protected, toolPath(in, sp)) {
-		return Deny, "доступ к служебным файлам tgsync запрещён"
+		return Deny, i18n.T("perm.agent.protected")
 	}
 	if in.Tool == "Glob" {
 		if base := globBase(in.Args); base != "" && touchesTgsync(in.Protected, toolPath(in, base)) {
-			return Deny, "доступ к служебным файлам tgsync запрещён"
+			return Deny, i18n.T("perm.agent.protected")
 		}
 	}
 	if readOnly[in.Tool] {
@@ -406,7 +406,7 @@ func matchRule(r store.Rule, tool, cmd, dir string) bool {
 		return false
 	}
 	c := strings.TrimSpace(cmd)
-	// Rules saved before «Всегда» refused these (a bare "python3" or "rm")
+	// Rules saved before "Always" refused these (a bare "python3" or "rm")
 	// no longer cover them.
 	if onceOnly(strings.Fields(c), dir) {
 		return false
