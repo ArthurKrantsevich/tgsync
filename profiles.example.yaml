@@ -1,0 +1,39 @@
+# Plugin profiles for tgsync sessions (optional).
+# Copy to profiles.yaml in the node folder (next to .env):
+#   Linux:   ~/.config/tgsync/profiles.yaml
+#   macOS:   ~/Library/Application Support/tgsync/profiles.yaml
+#   Windows: %APPDATA%\tgsync\profiles.yaml
+# The file is read at start: restart the node after editing it.
+# Full reference: docs/en/configuration.md#profilesyaml
+#
+# A session's profile is chosen in this order:
+#   1. /new <project> <task> --profile <name>
+#   2. projects.<project>.profile below
+#   3. DEFAULT_PROFILE from .env (default: full)
+# The profile "full" always exists: all settings, plugins and hooks from
+# ~/.claude, exactly as in a terminal. Define "full" here only to override it.
+
+profiles:
+  lean:
+    # Where Claude Code reads settings from: user (~/.claude/settings.json),
+    # project (.claude/settings.json), local (.claude/settings.local.json).
+    # Omitted or empty: all three.
+    setting_sources: [user, project, local]
+    # Extra environment variables for the claude process of the session,
+    # for example to switch off a hook that gets in the way.
+    env:
+      EXAMPLE_HOOK_ENABLED: "off"
+    # Settings layered on top (passed as claude --settings), for example to
+    # disable a plugin only in sessions started from Telegram.
+    settings:
+      enabledPlugins:
+        "example-plugin@example-marketplace": false
+
+  # A profile that ignores user-level settings and plugins entirely.
+  project-only:
+    setting_sources: [project, local]
+
+# Default profile per project. The key is the folder name under PROJECTS_ROOT.
+projects:
+  some-project:
+    profile: lean

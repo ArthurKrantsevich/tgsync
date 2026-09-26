@@ -1,0 +1,18 @@
+version: 2
+project_name: tgsync
+builds:
+  - main: ./cmd/tgsync
+    binary: tgsync
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+archives:
+  - files: [README.md, README.ru.md, CHANGELOG.md, CHANGELOG.ru.md, LICENSE, .env.example, profiles.example.yaml, docs/**/*, scripts/*]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+checksum:
+  name_template: checksums.txt
+release:
+  draft: true

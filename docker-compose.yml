@@ -1,0 +1,22 @@
+# Start (bash cannot export UID, so pass it under another name):
+#   TGSYNC_UID=$(id -u) TGSYNC_GID=$(id -g) docker compose --env-file ~/.config/tgsync/.env up -d --build
+# Create ~/.claude.json first if it does not exist (touch ~/.claude.json).
+# The node runs as your user and sees the same paths as the host, so files,
+# ~/.claude (auth, plugins, history) and /history keep working.
+services:
+  tgsync:
+    build: .
+    restart: unless-stopped
+    user: "${TGSYNC_UID:?set TGSYNC_UID=$(id -u)}:${TGSYNC_GID:?set TGSYNC_GID=$(id -g)}"
+    environment:
+      HOME: ${HOME}
+      TGSYNC_HOME: /config
+    volumes:
+      - ${HOME}/.config/tgsync:/config
+      - ${HOME}/.claude:${HOME}/.claude
+      - type: bind
+        source: ${HOME}/.claude.json
+        target: ${HOME}/.claude.json
+        bind:
+          create_host_path: false
+      - ${PROJECTS_ROOT:?set PROJECTS_ROOT in the env file}:${PROJECTS_ROOT}

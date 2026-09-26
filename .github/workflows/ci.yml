@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - name: shell scripts
+        run: sh -n scripts/install.sh && sh -n scripts/uninstall.sh
+      - name: cross vet
+        run: |
+          for os in linux darwin windows; do GOOS=$os go vet ./...; done
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: vet
+        run: go vet ./...
+      - name: test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then go test -race ./...; else go test ./...; fi
+      - name: build
+        run: go build -o bin/ ./cmd/tgsync
+      - name: powershell scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($f in 'scripts/install.ps1', 'scripts/uninstall.ps1') {
+            $e = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$null, [ref]$e) | Out-Null
+            if ($e) { $e; exit 1 }
+          }

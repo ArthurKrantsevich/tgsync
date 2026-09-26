@@ -1,0 +1,8 @@
+/bin/
+/data/
+.env
+.claude/worktrees/
+
+# Working design notes, kept local
+docs/superpowers/
+.superpowers/
