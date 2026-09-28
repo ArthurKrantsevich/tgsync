@@ -8,8 +8,17 @@ Russian version: [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-28
+
+A ☠️ No questions approve mode for runs without any buttons, and fewer false prompts about the tgsync folder. Upgrade: unpack the new archive and run the install script again; the mode is off until you pick it in `/approve`.
+
+### Added
+
+- **☠️ No questions approve mode** (`risky`), first in the `/approve` menu. It works like 🟢 Allow all, and commands that may reach the tgsync folder, which ask in every other mode, run without a button too; they leave a silent note in the topic, as sudo and destructive commands do. Agent questions still come as buttons, literal paths to `.env` and the database are still refused, and sudo is still refused when `SUDO_MODE=off`. The agent can read the bot token and the sudo password through any other spelling of the path, so use it only on a trusted machine in a private group.
+
 ### Fixed
 
+- **Fewer false "may reach the tgsync folder" prompts.** Heredoc text fed to ordinary commands (`cat > file <<EOF`) is no longer taken for paths, and a bare `/` in interpreter code (`//` and `/*` comments, regexes) is no longer taken for the root folder. Python heredocs and CSS files no longer ask for no reason.
 - `tgsync check`, `version`, `run` and `profile` work when started by the agent (for example `make install` from a session): the agent's environment no longer switches every tgsync call into sudo askpass mode.
 - `tgsync version` of a build from source shows the git version (`v0.3.0`, `v0.3.0-2-gabc123`) instead of `dev`.
 
@@ -161,7 +170,8 @@ First public release.
 - Path containment is OS-aware (Windows drive and Git Bash spellings, case folding, trailing dots, streams, hard links); sent files are read through one checked handle.
 - Panics in update handlers are recovered; file downloads, speech recognition and transcript reads are bounded in time or size; button data stays within Telegram's limits; buttons kept per session are capped; double taps cannot create duplicate sessions or topics.
 
-[Unreleased]: https://github.com/ArthurKrantsevich/tgsync/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ArthurKrantsevich/tgsync/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.3.0
 [0.2.1]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ArthurKrantsevich/tgsync/releases/tag/v0.2.0

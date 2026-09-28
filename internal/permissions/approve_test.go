@@ -176,6 +176,38 @@ func TestApproveAllStillAsksAboutTgsyncFolder(t *testing.T) {
 	}
 }
 
+func TestApproveRiskyAllowsTgsyncFolderWithNote(t *testing.T) {
+	f := newFixture(t)
+	fs := &fakeSudo{grants: map[int]int{}}
+	f.b.SetSudo(fs)
+	f.setMode(t, ApproveRisky)
+	can := f.b.CanUseTool(SessionInfo{ThreadID: thread, Project: "demo", ProjectDir: osPath("/w/demo"), Protected: []string{osPath("/opt/tgsync/.env")}})
+	for i, cmd := range []string{"cat /opt/tgs*/.env", "sudo cat /opt/tgs*/.env"} {
+		if d := decision(t, bash(can, cmd)); !d.Allow {
+			t.Fatalf("%s: %+v", cmd, d)
+		}
+		msgs := f.api.Messages(thread)
+		if len(msgs) != i+1 || msgs[i].Keyboard != nil || !msgs[i].Silent {
+			t.Fatalf("%s: messages %+v", cmd, msgs)
+		}
+	}
+	if d := decision(t, bash(can, "make build")); !d.Allow || len(f.api.Messages(thread)) != 2 {
+		t.Fatalf("safe command: %+v, messages %+v", d, f.api.Messages(thread))
+	}
+}
+
+func TestApproveRiskyKeepsHardDenies(t *testing.T) {
+	f := newFixture(t)
+	f.setMode(t, ApproveRisky)
+	can := f.b.CanUseTool(SessionInfo{ThreadID: thread, Project: "demo", ProjectDir: osPath("/w/demo"), Protected: []string{osPath("/opt/tgsync/.env")}})
+	if d := decision(t, bash(can, "cat "+shellPath("/opt/tgsync/.env"))); d.Allow {
+		t.Fatalf("protected file allowed: %+v", d)
+	}
+	if d := decision(t, bash(can, "sudo id")); d.Allow {
+		t.Fatalf("sudo allowed with SUDO_MODE=off: %+v", d)
+	}
+}
+
 func TestApproveAllStillAsksQuestions(t *testing.T) {
 	f := newFixture(t)
 	f.setMode(t, ApproveAll)

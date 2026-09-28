@@ -132,13 +132,23 @@ func (r *reach) command(cmd string, depth int) bool {
 	}
 	r.scan(f)
 	found := false
+	// A heredoc body is text fed to a command, not a path it opens: code
+	// fed to a shell or an interpreter is checked by heredocs, and command
+	// substitutions inside the body are still walked.
+	data := map[*syntax.Word]bool{}
 	syntax.Walk(f, func(n syntax.Node) bool {
 		if found {
 			return false
 		}
 		switch n := n.(type) {
+		case *syntax.Redirect:
+			if n.Hdoc != nil {
+				data[n.Hdoc], data[n.Word] = true, true
+			}
 		case *syntax.Word:
-			found = r.word(n)
+			if !data[n] {
+				found = r.word(n)
+			}
 		case *syntax.CallExpr:
 			found = r.scripts(n, depth)
 		case *syntax.Stmt:
@@ -277,7 +287,9 @@ func (r *reach) tokens(code string) bool {
 		if i := strings.IndexAny(tok, "*?$"); i >= 0 {
 			tok = tok[:i]
 		}
-		if tok != "" && r.path(files.Abs(r.project, tok), true, false) {
+		// A bare root is a comment (//, /*) or a regex far more often than a
+		// path; "/" + "home/…" is still caught by the tokens after it.
+		if p := files.Abs(r.project, tok); tok != "" && filepath.Dir(p) != p && r.path(p, true, false) {
 			return true
 		}
 	}

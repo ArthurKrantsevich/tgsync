@@ -116,7 +116,7 @@ Messages in the group get no reply at all.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| The agent runs commands without asking | Approval mode is 🟢 or 🟡 (`/approve`), an "Always" rule matched, your Claude Code settings allow it (`permissions.allow`, `defaultMode`), or the session mode is `acceptEdits` (`/mode`) | Switch `/approve` to 🔴; review `~/.claude/settings.json` and the project's `.claude/settings*.json`; set `/mode default`. |
+| The agent runs commands without asking | Approval mode is ☠️, 🟢 or 🟡 (`/approve`), an "Always" rule matched, your Claude Code settings allow it (`permissions.allow`, `defaultMode`), or the session mode is `acceptEdits` (`/mode`) | Switch `/approve` to 🔴; review `~/.claude/settings.json` and the project's `.claude/settings*.json`; set `/mode default`. |
 | A turn seems stuck and no button is visible | The request is higher up in the session topic, or it is in another session's topic | Scroll the session topic; `REMIND_EVERY` posts a reminder for unanswered requests. `STALL_WARN` does not fire while a request waits for you. |
 | Buttons do nothing | You are not in `ALLOWED_USER_IDS`, or the node restarted and the request expired | Check the id; repeat the action. |
 | `✓ sudo — SUDO_MODE=off: commands with sudo are rejected` and sudo commands are rejected | Default | Enable a mode ([configuration → sudo](configuration.md#sudo)) or use `NOPASSWD`. |
@@ -124,7 +124,7 @@ Messages in the group get no reply at all.
 | `✓ sudo — not available on Windows, SUDO_MODE forced to off` | Windows has no sudo | Expected. |
 | sudo asks again / "incorrect password" | Wrong password, or password changed | Up to 3 attempts per call. Update `SUDO_PASSWORD` for `env` mode. Beware `pam_faillock` lockouts. |
 | sudo fails with `a terminal is required` | Command reached sudo without tgsync's askpass (e.g. inside a script the agent wrote) | Only `sudo` calls written directly in the approved command get the token. Ask the agent to run `sudo` explicitly. |
-| Commands with the tgsync folder path always need a button, even in 🟢 | By design: tgsync protects its own files | Expected. See [security.md](security.md). |
+| Commands with the tgsync folder path always need a button, even in 🟢 | By design: tgsync protects its own files | Expected. Only ☠️ No questions lets them run without a button. See [security.md](security.md). |
 
 ## Voice messages
 

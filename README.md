@@ -280,8 +280,9 @@ Full instructions, including the voice server, backup, upgrade and uninstall: **
 | 🔴 **Ask me** *(default)* | A button for every action the built-in rules and your **Always** rules do not allow. |
 | 🟡 **All but sudo** | Everything runs without asking; sudo still gets a button. |
 | 🟢 **Allow all** | Every command runs without asking, sudo included (if sudo is enabled). |
+| ☠️ **No questions** | As 🟢, and commands that may touch tgsync's own folder run without asking too; they leave a silent note in the topic. For a trusted machine and a private group only. |
 
-In every mode, questions from the agent and commands that may touch tgsync's own folder (`.env`, database) still come as buttons. Read [security.md](docs/en/security.md#what-the-agent-can-do-in-each-mode) before switching to 🟡 or 🟢.
+Questions from the agent come as buttons in every mode. Commands that may touch tgsync's own folder (`.env`, database) come as buttons in every mode except ☠️. Read [security.md](docs/en/security.md#what-the-agent-can-do-in-each-mode) before switching to 🟡, 🟢 or ☠️.
 
 ## Documentation
 

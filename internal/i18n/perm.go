@@ -31,6 +31,7 @@ func init() {
 		"perm.awaiting_answer": {EN: "✍ Send your answer as the next message", RU: "✍ Жду ответ следующим сообщением"},
 
 		// Approve modes.
+		"perm.mode.risky":   {EN: "☠️ No questions", RU: "☠️ Без вопросов"},
 		"perm.mode.all":     {EN: "🟢 Allow all", RU: "🟢 Всё сам"},
 		"perm.mode.no_sudo": {EN: "🟡 All but sudo", RU: "🟡 Всё, кроме sudo"},
 		"perm.mode.ask":     {EN: "🔴 Ask me", RU: "🔴 По запросу"},

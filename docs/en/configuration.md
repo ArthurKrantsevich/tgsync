@@ -139,7 +139,7 @@ user ALL=(root) NOPASSWD: /usr/bin/systemctl restart myapp
 
 Never put `SUDO_PASSWORD` into a systemd `Environment=` line or a compose `environment:` block: from there it is visible in `/proc/<pid>/environ`. Keep it in `.env`, which tgsync loads and then removes from its environment.
 
-The approval mode (🟢 everything / 🟡 everything except sudo / 🔴 ask for every command) is not an `.env` setting: it is chosen in Telegram (`/approve`) and stored in the database. The default is 🔴 ask.
+The approval mode (☠️ everything, commands near the tgsync folder included / 🟢 everything / 🟡 everything except sudo / 🔴 ask for every command) is not an `.env` setting: it is chosen in Telegram (`/approve`) and stored in the database. The default is 🔴 ask.
 
 ## Voice messages
 
