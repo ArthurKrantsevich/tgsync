@@ -19,14 +19,17 @@ const (
 	ApproveAsk    = "ask"    // a button for every request
 	ApproveNoSudo = "nosudo" // everything except sudo is allowed
 	ApproveAll    = "all"    // everything is allowed, sudo included
+	ApproveRisky  = "risky"  // as all, and commands that may reach tgsync's folder too
 )
 
 // ApproveModes lists the modes in menu order.
-var ApproveModes = []string{ApproveAll, ApproveNoSudo, ApproveAsk}
+var ApproveModes = []string{ApproveRisky, ApproveAll, ApproveNoSudo, ApproveAsk}
 
 // ApproveLabel is the button text of a mode.
 func ApproveLabel(mode string) string {
 	switch mode {
+	case ApproveRisky:
+		return i18n.T("perm.mode.risky")
 	case ApproveAll:
 		return i18n.T("perm.mode.all")
 	case ApproveNoSudo:
@@ -44,7 +47,7 @@ func (b *Broker) ApproveMode(ctx context.Context) string {
 		return ApproveAsk
 	}
 	switch m {
-	case ApproveAll, ApproveNoSudo:
+	case ApproveRisky, ApproveAll, ApproveNoSudo:
 		return m
 	}
 	return ApproveAsk
@@ -53,17 +56,17 @@ func (b *Broker) ApproveMode(ctx context.Context) string {
 // SetApproveMode stores the node's approve mode.
 func (b *Broker) SetApproveMode(ctx context.Context, mode string) error {
 	switch mode {
-	case ApproveAll, ApproveNoSudo, ApproveAsk:
+	case ApproveRisky, ApproveAll, ApproveNoSudo, ApproveAsk:
 		return b.st.SetApproveMode(ctx, mode)
 	}
 	return errors.New(i18n.T("perm.mode.unknown", mode))
 }
 
-// autoAllow allows a request without asking. Destructive commands and sudo
-// leave a silent note in the topic, so the user still sees what ran; every
-// other call shows up only in the turn's status line, as the agent's
-// description of it.
-func (b *Broker) autoAllow(ctx context.Context, si SessionInfo, req agent.PermissionRequest, isSudo bool) agent.PermissionDecision {
+// autoAllow allows a request without asking. Destructive commands, sudo and
+// commands that may reach tgsync's folder (loud) leave a silent note in the
+// topic, so the user still sees what ran; every other call shows up only in
+// the turn's status line, as the agent's description of it.
+func (b *Broker) autoAllow(ctx context.Context, si SessionInfo, req agent.PermissionRequest, isSudo, loud bool) agent.PermissionDecision {
 	d := agent.PermissionDecision{Allow: true}
 	if isSudo {
 		var ok bool
@@ -71,7 +74,7 @@ func (b *Broker) autoAllow(ctx context.Context, si SessionInfo, req agent.Permis
 			return d
 		}
 	}
-	if cmd, _ := req.Input["command"].(string); isSudo || (req.ToolName == "Bash" && destructive(cmd)) {
+	if cmd, _ := req.Input["command"].(string); isSudo || loud || (req.ToolName == "Bash" && destructive(cmd)) {
 		_, _ = b.api.SendMessage(ctx, si.ThreadID, i18n.T("perm.auto", autoSummary(req, si.ProjectDir)), nil, true)
 	}
 	return d

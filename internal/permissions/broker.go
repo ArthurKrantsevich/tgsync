@@ -124,8 +124,11 @@ func (b *Broker) CanUseTool(si SessionInfo) agent.CanUseToolFunc {
 				return deny(sudoRefusal(err))
 			}
 		}
-		if mode := b.ApproveMode(ctx); !confirm && (mode == ApproveAll || (mode == ApproveNoSudo && !isSudo)) {
-			return b.autoAllow(ctx, si, req, isSudo)
+		switch mode := b.ApproveMode(ctx); {
+		case mode == ApproveRisky:
+			return b.autoAllow(ctx, si, req, isSudo, confirm)
+		case !confirm && (mode == ApproveAll || (mode == ApproveNoSudo && !isSudo)):
+			return b.autoAllow(ctx, si, req, isSudo, false)
 		}
 		text := permissionText(req, si.ProjectDir)
 		if isSudo {

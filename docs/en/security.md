@@ -35,7 +35,7 @@ Labels are quoted as they appear in the English interface (`BOT_LANGUAGE=en`, th
 
 **It does not protect against:**
 - a command you approved without reading it: tgsync is not a sandbox, and an approved command runs with your rights;
-- code the agent writes and runs in the 🟢 and 🟡 auto-approve modes: it runs as your user and sees everything you can;
+- code the agent writes and runs in the ☠️, 🟢 and 🟡 auto-approve modes: it runs as your user and sees everything you can;
 - an attacker who has your Telegram account or the bot token;
 - Telegram's servers reading the traffic: Bot API messages are not end-to-end encrypted;
 - malicious plugins, hooks or MCP servers in `~/.claude`.
@@ -58,19 +58,21 @@ Labels are quoted as they appear in the English interface (`BOT_LANGUAGE=en`, th
 
 The auto-approve mode is set per node with `/approve` (see [usage.md](usage.md#permissions)).
 
-| | 🔴 Ask me (default) | 🟡 All but sudo | 🟢 Allow all |
-|---|---|---|---|
-| Read and search files | no prompt | no prompt | no prompt |
-| Edit files inside the project | no prompt, except [sensitive files](#sensitive-project-files) | no prompt | no prompt |
-| Edit files outside the project | button | no prompt | no prompt |
-| Shell commands | button, unless an Always rule matches | no prompt | no prompt |
-| sudo (if `SUDO_MODE` is not `off`) | button | button | no prompt |
-| Commands that may touch tgsync's folder | button without Always | button without Always | button without Always |
-| Questions from the agent | buttons | buttons | buttons |
+| | 🔴 Ask me (default) | 🟡 All but sudo | 🟢 Allow all | ☠️ No questions |
+|---|---|---|---|---|
+| Read and search files | no prompt | no prompt | no prompt | no prompt |
+| Edit files inside the project | no prompt, except [sensitive files](#sensitive-project-files) | no prompt | no prompt | no prompt |
+| Edit files outside the project | button | no prompt | no prompt | no prompt |
+| Shell commands | button, unless an Always rule matches | no prompt | no prompt | no prompt |
+| sudo (if `SUDO_MODE` is not `off`) | button | button | no prompt | no prompt |
+| Commands that may touch tgsync's folder | button without Always | button without Always | button without Always | no prompt, silent note |
+| Questions from the agent | buttons | buttons | buttons | buttons |
 
 In every mode, whatever your Claude Code settings allow (`~/.claude/settings.json`, project settings) runs without a prompt. Make sure there are no broad rules there that you would not trust the agent with unattended.
 
-**In practice.** In 🟡 and 🟢 the agent can run any code as your user: delete files, send data over the network, read SSH keys. Use them only for projects and tasks you trust, and switch back to 🔴 when you are not watching. In 🟢 with sudo enabled, the agent gets root without confirmation.
+**In practice.** In 🟡, 🟢 and ☠️ the agent can run any code as your user: delete files, send data over the network, read SSH keys. Use them only for projects and tasks you trust, and switch back to 🔴 when you are not watching. In 🟢 and ☠️ with sudo enabled, the agent gets root without confirmation.
+
+**☠️ No questions** also drops the button for commands that may reach tgsync's folder, so the agent can read the bot token and the sudo password through any spelling of the path other than the literal one. Literal paths to `.env` and the database are still refused, and sudo is still refused when `SUDO_MODE=off`. Use ☠️ only on a machine you trust, in a private group.
 
 `/mode acceptEdits` (Claude Code's own mode) lets Claude Code accept file edits without asking. In that mode tgsync's per-file checks may not be consulted, so keep `default` when working with unfamiliar or untrusted code.
 
@@ -80,11 +82,11 @@ tgsync's own files are `.env` (bot token, sudo password) and the SQLite database
 
 - Read, write and search tools (`Read`, `Grep`, `Glob`, `LS`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`) that point at these files, or at a folder that holds them or tgsync's folder, are denied. `~` is expanded and symlinks are followed first, so a link in the project that leads to tgsync's folder does not help; a `Glob` pattern that starts with such a folder is denied too.
 - A shell command with the literal path of `.env` or the database is denied, with or without sudo.
-- A shell command that may reach tgsync's folder another way always needs a button without Always, in every auto-approve mode, and saved rules do not apply to it. Read such commands carefully. This covers `~`, `~user` and `$HOME`; `$XDG_CONFIG_HOME`, `$APPDATA`, `$PWD` and similar variables (expanded from the node's environment); relative paths, also after `cd`/`pushd`, and links inside the project; globs such as `tgs*`; unknown variables before `/tgsync/`; scripts run by `sh -c`, `eval`, `python -c`/`node -e` and heredocs fed to a shell or an interpreter; parent folders such as `~` or `/`; and commands the shell parser does not support.
-- Not flagged: quoted text (`git commit -m "a / b"`, a heredoc written to a file) unless a shell or an interpreter runs it, paths inside the project, and the project's own parent (`ls ..`, `cd .. && ls`) unless the command walks folder trees (`grep -r`, `rg`, `find`, `tar` …).
+- A shell command that may reach tgsync's folder another way always needs a button without Always, in every auto-approve mode except ☠️ (there it runs and leaves a silent note), and saved rules do not apply to it. Read such commands carefully. This covers `~`, `~user` and `$HOME`; `$XDG_CONFIG_HOME`, `$APPDATA`, `$PWD` and similar variables (expanded from the node's environment); relative paths, also after `cd`/`pushd`, and links inside the project; globs such as `tgs*`; unknown variables before `/tgsync/`; scripts run by `sh -c`, `eval`, `python -c`/`node -e` and heredocs fed to a shell or an interpreter; parent folders such as `~` or `/`; and commands the shell parser does not support.
+- Not flagged: quoted text (`git commit -m "a / b"`, a heredoc written to a file such as `cat > f <<EOF`) unless a shell or an interpreter runs it, a bare `/` in interpreter code (`//` and `/*` comments, regexes), paths inside the project, and the project's own parent (`ls ..`, `cd .. && ls`) unless the command walks folder trees (`grep -r`, `rg`, `find`, `tar` …).
 - `send_file`, `/file`, `/ls` and turn diffs never send these files, even if they sit inside a project.
 
-**Limitation.** The agent runs as the same OS user, so these are tgsync's rules, not OS permissions. This is defence in depth, not a boundary: a script the agent writes and runs (without a prompt in 🟡 and 🟢) can read these files and tgsync will not see it.
+**Limitation.** The agent runs as the same OS user, so these are tgsync's rules, not OS permissions. This is defence in depth, not a boundary: a script the agent writes and runs (without a prompt in 🟡, 🟢 and ☠️) can read these files and tgsync will not see it.
 
 ## Sensitive project files
 
@@ -121,7 +123,7 @@ In `telegram` mode the password is asked for on every command: without a termina
 
 Keep in mind:
 - An approved sudo command runs as root. The button is the safeguard: read the whole command before ✅. Other parts of the same command (e.g. `./configure` in `./configure && sudo make install`) do not see the token but run as your user.
-- In the 🟢 auto-approve mode, sudo commands run without a button.
+- In the 🟢 and ☠️ auto-approve modes, sudo commands run without a button.
 - The one-time token is part of the command line, so other processes of your user can see it in the process list while the command runs. It cannot be hidden there; what limits it: it works only for the approved calls (usually once), for 5 minutes and until the turn ends, and the node answers only a process started by a setuid-root `sudo`.
 - Do not set `SUDO_PASSWORD` via systemd `Environment=` or compose `environment:`: it is visible in `/proc/<pid>/environ` from there.
 - Safer than any password: a `NOPASSWD` rule in `/etc/sudoers.d/` for exactly the commands you need (e.g. `systemctl restart myapp`), with `SUDO_MODE=off` for everything else.

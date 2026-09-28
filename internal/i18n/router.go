@@ -136,17 +136,21 @@ Control topic gone? Send /control in General.`,
 
 		"router.approve": {
 			EN: "🔐 <b>Auto-approve commands</b>\nNow: <b>%s</b>\n\n" +
+				"☠️ No questions — nothing asks, sudo and commands near the tgsync folder included (risky)\n" +
 				"🟢 Allow all — every command runs without asking, sudo included\n" +
 				"🟡 All but sudo — sudo still asks\n" +
 				"🔴 Ask me — every command asks\n\n" +
-				"Agent questions and commands that touch the tgsync folder always ask, in every mode. " +
-				"Still, in 🟢 and 🟡 the agent can run any code as your user, so this is no hard barrier: tgsync's own files are not fully protected there.",
+				"In 🟢, 🟡 and 🔴, commands that touch the tgsync folder always ask; in ☠️ they only leave a note. " +
+				"Agent questions ask in every mode, and direct reads of .env and the database are refused. " +
+				"In ☠️, 🟢 and 🟡 the agent can run any code as your user, so this is no hard barrier: tgsync's own files are not fully protected there.",
 			RU: "🔐 <b>Автоодобрение команд</b>\nСейчас: <b>%s</b>\n\n" +
+				"☠️ Без вопросов — ничего не спрашивается, даже sudo и команды у папки tgsync (рискованно)\n" +
 				"🟢 Всё сам — любые команды без вопросов, включая sudo\n" +
 				"🟡 Всё, кроме sudo — на sudo придёт кнопка\n" +
 				"🔴 По запросу — кнопка на каждую команду\n\n" +
-				"Вопросы агента и команды, которые обращаются к папке tgsync, приходят кнопкой в любом режиме. " +
-				"Но в режимах 🟢 и 🟡 агент может запустить любой код от твоего пользователя, так что это не стена: служебные файлы tgsync там защищены не полностью.",
+				"В 🟢, 🟡 и 🔴 команды, которые обращаются к папке tgsync, приходят кнопкой; в ☠️ они только оставляют заметку. " +
+				"Вопросы агента приходят в любом режиме, а прямое чтение .env и базы запрещено. " +
+				"В режимах ☠️, 🟢 и 🟡 агент может запустить любой код от твоего пользователя, так что это не стена: служебные файлы tgsync там защищены не полностью.",
 		},
 		"router.menu":         {EN: "🖥 <b>%s</b> — what's next?", RU: "🖥 <b>%s</b> — что делаем?"},
 		"router.project_menu": {EN: "📁 <b>%s</b>\nNew session — then send the task in its topic. Or start with a task: /new %s task", RU: "📁 <b>%s</b>\nНовая сессия — задачу напишешь в её теме. С задачей сразу: /new %s задача"},

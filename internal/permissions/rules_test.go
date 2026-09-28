@@ -333,16 +333,21 @@ func TestEvaluateBashReachingTgsyncOtherSpellings(t *testing.T) {
 		"cd .. && grep -rn token .",
 		"ls /",
 		"du -sh ~/*",
+		"cat <<EOF\n$(cat ~/.config/tg*/.env)\nEOF",
+		"cat > x <<'EOF'\ny\nEOF\ncat ~/.config/tg*/.env",
 	} {
 		if got, reason := Evaluate(tgsyncInput(cmd)); got != Confirm {
 			t.Errorf("%q: got %v (%s), want confirm", cmd, got, reason)
 		}
 	}
 	for cmd, want := range map[string]Decision{
-		`git commit -m "fix: a / b"`:                         Ask,
-		`git commit -m "expand ~ in paths"`:                  Ask,
-		"cat > notes.md <<'EOF'\nsplit a / b and ~ too\nEOF": Ask,
-		"go build -o $PWD/bin/tgsync ./cmd/tgsync":           Ask,
+		`git commit -m "fix: a / b"`:                              Ask,
+		`git commit -m "expand ~ in paths"`:                       Ask,
+		"cat > notes.md <<'EOF'\nsplit a / b and ~ too\nEOF":      Ask,
+		"cat > a.css <<'EOF'\n/* ── home ── */\n.a { b: c }\nEOF": Ask,
+		"python3 - <<'PY'\nx = a // b  # /* not a path */\nPY":    Ask,
+		"node -e 'const u = \"https://x.io/\"; // note'":          Ask,
+		"go build -o $PWD/bin/tgsync ./cmd/tgsync":                Ask,
 		"ls ..":                      Allow,
 		"cd .. && ls":                Ask,
 		"ls ../other":                Allow,

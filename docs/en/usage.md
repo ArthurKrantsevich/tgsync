@@ -222,11 +222,12 @@ Everything else arrives as a "🔐 Permission request" with the command, the age
 
 | Mode | Behaviour |
 |---|---|
+| **☠️ No questions** | as 🟢, and commands that may touch tgsync's folder run without asking too (risky: the agent can read the bot token and the sudo password) |
 | **🟢 Allow all** | every command runs without asking, sudo included (if sudo is enabled) |
 | **🟡 All but sudo** | everything runs without asking; sudo gets a button |
 | **🔴 Ask me** (default) | a button for every action the rules above do not allow |
 
-In 🟢 and 🟡 the status line shows what the agent is doing ("▶ Running the tests"), not the command itself. Destructive commands (deleting files, `git push`, `git reset`, stopping processes, sudo, …) still leave a silent note "✅ auto: …" with the command. In every mode, questions from the agent and commands that may touch tgsync's folder (`.env`, database) still come as buttons. See [security.md](security.md) for the risks.
+In ☠️, 🟢 and 🟡 the status line shows what the agent is doing ("▶ Running the tests"), not the command itself. Destructive commands (deleting files, `git push`, `git reset`, stopping processes, sudo, …) still leave a silent note "✅ auto: …" with the command; in ☠️ so do commands that may touch tgsync's folder. Questions from the agent come as buttons in every mode, and commands that may touch tgsync's folder (`.env`, database) in every mode except ☠️. Use ☠️ only on a trusted machine in a private group. See [security.md](security.md) for the risks.
 
 `/mode` in a session topic is something else: Claude Code's own mode (`default`, `acceptEdits`, `plan`) for one session.
 

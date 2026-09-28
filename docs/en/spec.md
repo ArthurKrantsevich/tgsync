@@ -64,7 +64,7 @@ questions into inline buttons.
 | **Inbox / queue** | Per-session FIFO of user messages waiting for the next turn. Across sessions, a node-wide FIFO of topics waiting for a turn slot (`MAX_PARALLEL_SESSIONS`, at most one running turn per project). |
 | **Session state** | `queued`, `starting`, `running`, `waiting` (on the user), `idle`, `interrupted`, `failed`, `closed`. Persisted in `sessions.state`. |
 | **Permission mode** | Claude Code's own mode for the session: `default`, `acceptEdits`, `plan` (changed by `/mode`). Passed to the CLI. |
-| **Approve mode** | Node-wide tgsync setting (`/approve`): `ask` (🔴 a button for every request), `nosudo` (🟡 everything except sudo is allowed), `all` (🟢 everything, sudo included). Stored in `kv.approve_mode`, default `ask`. |
+| **Approve mode** | Node-wide tgsync setting (`/approve`): `ask` (🔴 a button for every request), `nosudo` (🟡 everything except sudo is allowed), `all` (🟢 everything, sudo included), `risky` (☠️ as `all`, and `Confirm` too). Stored in `kv.approve_mode`, default `ask`. |
 | **Rule (Always)** | A per-project saved allowance created by the "♾ Always" button, stored in `permission_rules`. |
 
 ---
@@ -382,8 +382,8 @@ In this order:
    - otherwise → `Ask`.
 5. Any other tool: a matching saved rule → `Allow`; otherwise `Ask`.
 
-`Confirm` requires a button in every approve mode, offers no Always button,
-and saved rules do not apply to it.
+`Confirm` requires a button in every approve mode except ☠️ (`risky`), offers
+no Always button, and saved rules do not apply to it.
 
 ### 5.4 Sensitive writes
 
@@ -397,7 +397,7 @@ inside the project and:
 These files make git, Claude Code, direnv or an editor run commands (tgsync
 itself runs `git add` for snapshots, which runs clean filters). A sensitive
 write is `Ask`, never auto-allowed by a project rule, and gets no Always
-button. **Note:** `Ask` is still auto-allowed in the 🟢 and 🟡 approve modes.
+button. **Note:** `Ask` is still auto-allowed in the ☠️, 🟢 and 🟡 approve modes.
 
 ### 5.5 Reach check (defense in depth)
 
@@ -407,7 +407,12 @@ variables (`$X/tgsync/.env`), `--opt=path` and `VAR=path` forms, nested
 `sh -c` scripts and heredocs (up to depth 3), and `folder/file` tails such as
 `tgsync/.env`. Paths inside the project are ignored unless tgsync's folder is
 itself inside the project. A hit makes the request `Confirm`. For sudo
-commands a hit also forces a button.
+commands a hit also forces a button (except in ☠️).
+
+Not a hit: heredoc bodies fed to ordinary commands (`cat > f <<EOF`); code
+fed to a shell or an interpreter is still checked, and command substitutions
+inside the body are walked. In interpreter code a bare `/` (`//` and `/*`
+comments, regexes) is not taken as the root folder.
 
 ### 5.6 Approve modes
 
@@ -416,9 +421,11 @@ commands a hit also forces a button.
 | 🔴 Ask me | `ask` (default) | Every `Ask` request shows buttons. |
 | 🟡 All but sudo | `nosudo` | `Ask` requests are auto-allowed; destructive commands leave a silent "✅ auto" note; sudo requests show buttons. |
 | 🟢 Allow all | `all` | `Ask` requests and sudo requests are auto-allowed (sudo still needs the password flow). |
+| ☠️ No questions | `risky` | As `all`, and `Confirm` requests are auto-allowed too; they leave a silent "✅ auto" note, as sudo and destructive commands do. First in the menu. |
 
-In all modes: `Deny` stays denied, `Confirm` shows buttons, and
-`AskUserQuestion` is always shown.
+In all modes: `Deny` stays denied (literal paths to protected files, sudo
+when `SUDO_MODE=off`) and `AskUserQuestion` is always shown. `Confirm` shows
+buttons in every mode except ☠️.
 
 ### 5.7 Always rules
 
@@ -441,7 +448,7 @@ delete them; they live in the `permission_rules` table.
 | `env` | `SUDO_PASSWORD` from `.env`. |
 | `telegram` | asked in the session topic; the user's reply is deleted at once (needs the "Delete messages" right; `tgsync check` fails without it). |
 
-Flow when a sudo command is approved (by button or by the 🟢 mode):
+Flow when a sudo command is approved (by button or by the 🟢 or ☠️ mode):
 
 1. A random 128-bit one-time token is generated. Every sudo call in the
    command is rewritten to
@@ -480,11 +487,11 @@ with `/` is never taken as the password.
 
 ### 5.9 Limits of the model (read this)
 
-- **Auto modes are not a security boundary.** In 🟢 and 🟡 modes the agent can
-  run any code as the node's OS user. That code can read `.env` (bot token,
+- **Auto modes are not a security boundary.** In ☠️, 🟢 and 🟡 modes the agent
+  can run any code as the node's OS user. That code can read `.env` (bot token,
   sudo password in `env` mode), the database and anything else the user can
   read. The literal, parsed and reach checks only make the obvious spellings
-  need a tap.
+  need a tap; in ☠️ the reach check only leaves a note.
 - tgsync only sees the tool calls the CLI forwards to `CanUseTool`. Calls the
   CLI allows by itself (its own permission mode such as `acceptEdits`, allow
   rules in Claude Code settings, read access it grants without asking) are
@@ -1057,7 +1064,7 @@ the node folder; run `tgsync check` before registering the service.
 - **One turn per project.** Two sessions in the same project never run turns
   at the same time, even with free slots.
 - **Always rules** cannot be listed or removed from Telegram.
-- **Sensitive writes** are auto-allowed in 🟢/🟡 modes (they are `Ask`, not
+- **Sensitive writes** are auto-allowed in ☠️/🟢/🟡 modes (they are `Ask`, not
   `Confirm`).
 - **Cleanup has no age threshold.** Every closed session with an existing
   topic is offered for deletion, including ones closed a minute ago.

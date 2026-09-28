@@ -369,7 +369,7 @@ All of these are `.env` settings; details and defaults are in [configuration.md]
 - **sudo**: `SUDO_MODE=off|env|telegram`. Read the risks in [configuration.md → sudo](configuration.md#sudo) first. The safest choice is `off` plus a narrow `NOPASSWD` rule.
 - **Auto-send files**: `AUTO_SEND_GLOBS=**/*.md,**/*.pdf` sends matching changed files at the end of each turn.
 - **Limits**: `MAX_PARALLEL_SESSIONS` (concurrent turns), `IDLE_TIMEOUT` (stop idle `claude` processes), `MAX_TURN_DURATION` (hard turn limit), `STALL_WARN` (silence warning), `REMIND_EVERY` (reminders about unanswered requests).
-- **Approval mode**: chosen in Telegram with `/approve` (🟢 Allow all / 🟡 All but sudo / 🔴 Ask me, the default). Stored in the database, not in `.env`.
+- **Approval mode**: chosen in Telegram with `/approve` (☠️ No questions / 🟢 Allow all / 🟡 All but sudo / 🔴 Ask me, the default). Stored in the database, not in `.env`.
 
 Restart the node after changing `.env` or `profiles.yaml`.
 
@@ -462,7 +462,7 @@ With the same token and database, the node reuses its existing control topic and
 - [ ] `ALLOWED_USER_IDS` contains only your own id (and people you fully trust with shell access to this machine).
 - [ ] The group is private, and only trusted people are members: everyone in it sees code, command output and file contents.
 - [ ] Each node has its own bot; unused bots are removed from the group.
-- [ ] The approval mode stays 🔴 (ask) unless you understand that 🟢/🟡 let the agent run any command as your user without asking.
+- [ ] The approval mode stays 🔴 (ask) unless you understand that 🟢/🟡 let the agent run any command as your user without asking, and ☠️ also lets it read the bot token and the sudo password.
 - [ ] `SUDO_MODE=off` unless needed; prefer narrow `NOPASSWD` rules. Never put `SUDO_PASSWORD` into systemd or compose environment blocks.
 - [ ] The STT server (if any) listens on `127.0.0.1` or is reachable only through a VPN/TLS.
 - [ ] Backups of `.env` are encrypted.
