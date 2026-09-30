@@ -57,6 +57,16 @@ func (r Registry) Dir(name string) (string, error) {
 	return dir, nil
 }
 
+// Delete removes a project directory with everything in it. A project that is
+// a symlink loses only the link.
+func (r Registry) Delete(name string) error {
+	dir, err := r.Dir(name)
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(dir)
+}
+
 // Create makes a new project directory with an empty git repository.
 func (r Registry) Create(ctx context.Context, name string) (string, error) {
 	if !nameRe.MatchString(name) {

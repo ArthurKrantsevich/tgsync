@@ -280,8 +280,8 @@ func (r *Router) callback(ctx context.Context, u telegram.Update) {
 			return
 		}
 		switch kind {
-		case "new", "pr", "ph", "m", "ap":
-			if kind == "new" && !r.claimPress(u.MessageID, u.CallbackData) {
+		case "new", "pr", "ph", "m", "ap", "dp", "dy":
+			if (kind == "new" || kind == "dy") && !r.claimPress(u.MessageID, u.CallbackData) {
 				_ = r.API.AnswerCallback(ctx, u.CallbackID, i18n.T("router.session_creating"))
 				return
 			}
@@ -298,6 +298,10 @@ func (r *Router) callback(ctx context.Context, u telegram.Update) {
 				r.menuAction(ctx, arg)
 			case "ap":
 				r.setApprove(ctx, u.MessageID, arg)
+			case "dp":
+				r.askDeleteProject(ctx, arg)
+			case "dy":
+				r.deleteProject(ctx, arg)
 			}
 			return
 		}
@@ -557,7 +561,7 @@ func (r *Router) listProfiles(ctx context.Context) {
 	r.reply(ctx, r.Topics.Control(), i18n.T("router.profiles", render.Escape(strings.Join(names, ", "))))
 }
 
-// file handles a document or photo the user sent: in a session topic it is
+// file handles a document, photo or video the user sent: in a session topic it is
 // stored in the project inbox for the agent.
 func (r *Router) file(ctx context.Context, u telegram.Update) {
 	switch {
@@ -672,7 +676,52 @@ func (r *Router) projectMenu(ctx context.Context, name string) {
 		{{Text: i18n.T("router.btn.new_session"), Data: "new:" + name}, {Text: i18n.T("router.btn.history"), Data: "ph:" + name}},
 		{{Text: i18n.T("router.btn.back_projects"), Data: "m:projects"}},
 	}
+	if data := "dy:" + name; len(data) <= 64 { // Telegram rejects longer button data
+		kb[1] = append(kb[1], telegram.Button{Text: i18n.T("router.btn.delete_project"), Data: "dp:" + name})
+	}
 	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), i18n.T("router.project_menu", render.Escape(name), render.Escape(name)), kb, false)
+}
+
+// openIn reports whether a session of the project is open.
+func (r *Router) openIn(project string) bool {
+	for _, s := range r.Sessions.List() {
+		if s.Project == project {
+			return true
+		}
+	}
+	return false
+}
+
+// askDeleteProject asks before a project folder is removed for good.
+func (r *Router) askDeleteProject(ctx context.Context, name string) {
+	dir, err := r.Projects.Dir(name)
+	if err != nil {
+		r.warnMenu(ctx, err)
+		return
+	}
+	if r.openIn(name) {
+		r.warnMenu(ctx, errors.New(i18n.T("router.delete_busy", name)))
+		return
+	}
+	kb := telegram.Keyboard{{
+		{Text: i18n.T("router.btn.delete_yes"), Data: "dy:" + name},
+		{Text: i18n.T("router.btn.delete_no"), Data: "pr:" + name},
+	}}
+	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), i18n.T("router.delete_confirm", render.Escape(name), render.Escape(dir)), kb, false)
+}
+
+// deleteProject removes a project folder the user confirmed.
+func (r *Router) deleteProject(ctx context.Context, name string) {
+	if r.openIn(name) {
+		r.warnMenu(ctx, errors.New(i18n.T("router.delete_busy", name)))
+		return
+	}
+	if err := r.Projects.Delete(name); err != nil {
+		r.warnMenu(ctx, err)
+		return
+	}
+	kb := telegram.Keyboard{{{Text: i18n.T("router.btn.projects"), Data: "m:projects"}, {Text: i18n.T("router.btn.menu"), Data: "m:menu"}}}
+	_, _ = r.API.SendMessage(ctx, r.Topics.Control(), i18n.T("router.project_deleted", render.Escape(name)), kb, false)
 }
 
 func (r *Router) askProjectName(ctx context.Context) {

@@ -59,6 +59,50 @@ func TestBadNames(t *testing.T) {
 		if _, err := r.Create(context.Background(), name); !errors.Is(err, ErrBadName) {
 			t.Errorf("Create(%q): want ErrBadName, got %v", name, err)
 		}
+		if err := r.Delete(name); !errors.Is(err, ErrBadName) {
+			t.Errorf("Delete(%q): want ErrBadName, got %v", name, err)
+		}
+	}
+}
+
+func TestDelete(t *testing.T) {
+	root := t.TempDir()
+	r := Registry{Root: root}
+	dir, err := r.Create(context.Background(), "junk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Delete("junk"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("project still there: %v", err)
+	}
+	if err := r.Delete("junk"); err == nil {
+		t.Fatal("deleting a missing project must fail")
+	}
+}
+
+// A project that is a symlink loses only the link, never the target.
+func TestDeleteSymlinkKeepsTarget(t *testing.T) {
+	root, target := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(target, "keep.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Registry{Root: root}).Delete("link"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "link")); !os.IsNotExist(err) {
+		t.Fatalf("link still there: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "keep.txt")); err != nil {
+		t.Fatalf("target touched: %v", err)
 	}
 }
 

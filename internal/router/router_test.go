@@ -226,6 +226,70 @@ func TestProjectsList(t *testing.T) {
 	}
 }
 
+func (f *fx) tap(data string) {
+	f.r.Handle(context.Background(), telegram.Update{UserID: owner, ThreadID: f.r.Topics.Control(), MessageID: 77,
+		CallbackID: "cb", CallbackData: data})
+}
+
+func TestDeleteProjectAsksThenDeletes(t *testing.T) {
+	f := setup(t)
+	control := f.r.Topics.Control()
+	f.tap("pr:demo")
+	if b, ok := f.api.Button(control, "🗑"); !ok || b.Data != "dp:demo" {
+		t.Fatalf("delete button: %+v %v", b, ok)
+	}
+	f.tap("dp:demo")
+	if _, err := os.Stat(filepath.Join(f.root, "demo")); err != nil {
+		t.Fatalf("the first press must only ask: %v", err)
+	}
+	if reply := f.lastControl(t); !strings.Contains(reply, "demo") || !strings.Contains(reply, filepath.Join(f.root, "demo")) {
+		t.Fatalf("confirmation: %q", reply)
+	}
+	msgs := f.api.Messages(control)
+	var yes telegram.Button
+	for _, row := range msgs[len(msgs)-1].Keyboard {
+		for _, b := range row {
+			if strings.HasPrefix(b.Data, "dy:") {
+				yes = b
+			}
+		}
+	}
+	if yes.Data != "dy:demo" {
+		t.Fatalf("confirm button: %+v", msgs[len(msgs)-1].Keyboard)
+	}
+	f.tap(yes.Data)
+	if _, err := os.Stat(filepath.Join(f.root, "demo")); !os.IsNotExist(err) {
+		t.Fatalf("project not deleted: %v", err)
+	}
+	if reply := f.lastControl(t); !strings.Contains(reply, "удалён") {
+		t.Fatalf("reply: %q", reply)
+	}
+}
+
+func TestDeleteProjectWithOpenSessionRefused(t *testing.T) {
+	f := setup(t)
+	f.send(f.r.Topics.Control(), "/new demo task")
+	testutil.Eventually(t, "agent started", func() bool { return len(f.ag.Sessions()) == 1 })
+	f.tap("dy:demo")
+	if _, err := os.Stat(filepath.Join(f.root, "demo")); err != nil {
+		t.Fatalf("project with an open session deleted: %v", err)
+	}
+	if reply := f.lastControl(t); !strings.Contains(reply, "/close") {
+		t.Fatalf("reply: %q", reply)
+	}
+}
+
+func TestDeleteProjectBadName(t *testing.T) {
+	f := setup(t)
+	f.tap("dy:..")
+	if _, err := os.Stat(f.root); err != nil {
+		t.Fatalf("root gone: %v", err)
+	}
+	if reply := f.lastControl(t); !strings.Contains(reply, "⚠️") {
+		t.Fatalf("reply: %q", reply)
+	}
+}
+
 func TestNewSessionWithTask(t *testing.T) {
 	f := setup(t)
 	f.send(f.r.Topics.Control(), "/new@tgsync_bot demo fix the\nlogin bug")
