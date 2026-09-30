@@ -52,7 +52,7 @@ type Update struct {
 	ThreadID     int
 	MessageID    int
 	Text         string // message text, or the caption of a file
-	File         *File  // attached document or photo
+	File         *File  // attached document, photo or video
 	Voice        *Voice // voice message or audio file
 	CallbackID   string
 	CallbackData string

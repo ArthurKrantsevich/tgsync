@@ -115,6 +115,27 @@ func TestNormalizeAttachments(t *testing.T) {
 	if u.File == nil || u.File.ID != "big" || u.File.Name != "photo.jpg" || u.Text != "" {
 		t.Fatalf("photo: %+v", u.File)
 	}
+	u, _ = normalize(&models.Update{Message: &models.Message{
+		Chat: models.Chat{ID: chat}, From: &models.User{ID: 5}, Caption: "что тут не так",
+		Video: &models.Video{FileID: "vid", FileName: "screen.mov", FileSize: 5000},
+	}}, chat)
+	if u.File == nil || u.File.ID != "vid" || u.File.Name != "screen.mov" || u.File.Size != 5000 || u.Text != "что тут не так" {
+		t.Fatalf("video: %+v %+v", u, u.File)
+	}
+	u, _ = normalize(&models.Update{Message: &models.Message{
+		Chat: models.Chat{ID: chat}, From: &models.User{ID: 5},
+		Video: &models.Video{FileID: "vid2", FileSize: 70},
+	}}, chat)
+	if u.File == nil || u.File.Name != "video.mp4" {
+		t.Fatalf("unnamed video: %+v", u.File)
+	}
+	u, _ = normalize(&models.Update{Message: &models.Message{
+		Chat: models.Chat{ID: chat}, From: &models.User{ID: 5},
+		VideoNote: &models.VideoNote{FileID: "circle", FileSize: 80},
+	}}, chat)
+	if u.File == nil || u.File.ID != "circle" || u.File.Name != "video_note.mp4" || u.File.Size != 80 {
+		t.Fatalf("video note: %+v", u.File)
+	}
 }
 
 func TestNormalizeVoice(t *testing.T) {
