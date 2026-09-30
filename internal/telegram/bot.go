@@ -77,6 +77,15 @@ func normalize(u *models.Update, chatID int64) (Update, bool) {
 			}
 			u.File = &File{ID: best.FileID, Name: "photo.jpg", Size: int64(best.FileSize)}
 			u.Text = m.Caption
+		case m.Video != nil:
+			name := m.Video.FileName
+			if name == "" {
+				name = "video.mp4"
+			}
+			u.File = &File{ID: m.Video.FileID, Name: name, Size: m.Video.FileSize}
+			u.Text = m.Caption
+		case m.VideoNote != nil:
+			u.File = &File{ID: m.VideoNote.FileID, Name: "video_note.mp4", Size: int64(m.VideoNote.FileSize)}
 		case m.Voice != nil:
 			u.Voice = &Voice{ID: m.Voice.FileID, Name: "voice.ogg", Size: m.Voice.FileSize, Duration: m.Voice.Duration}
 			u.Text = m.Caption
