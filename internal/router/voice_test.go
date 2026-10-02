@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -82,8 +84,17 @@ func TestVoiceGoesToAgent(t *testing.T) {
 		}
 		p := ss[0].Sent()[0]
 		return strings.Contains(p, "[Voice message") && strings.Contains(p, "почини <b>тесты</b>") &&
-			strings.Contains(p, "[Caption: срочно]") && strings.Contains(p, "wait for my confirmation")
+			strings.Contains(p, "[Caption: срочно]") && strings.Contains(p, "wait for my confirmation") &&
+			strings.Contains(p, "[Audio: .tgsync/inbox/")
 	})
+	// The recording itself stays in the project, e.g. as a voice sample.
+	matches, _ := filepath.Glob(filepath.Join(f.root, "demo", ".tgsync", "inbox", "*voice.ogg"))
+	if len(matches) != 1 {
+		t.Fatalf("saved audio: %v", matches)
+	}
+	if data, _ := os.ReadFile(matches[0]); string(data) != "OGG" {
+		t.Fatalf("audio content: %q", data)
+	}
 }
 
 // assertNothingSent: after a failed voice, the next text is the agent's only message.
@@ -123,23 +134,44 @@ func TestVoiceDownloadError(t *testing.T) {
 	}
 }
 
+// assertKeptAsFile checks that an untranscribed recording was explained with
+// reply and saved to the project inbox like a sent file.
+func assertKeptAsFile(t *testing.T, f *fx, thread int, reply, name string) {
+	t.Helper()
+	var said, saved bool
+	for _, m := range f.api.Messages(thread) {
+		said = said || strings.Contains(m.HTML, reply)
+		saved = saved || strings.Contains(m.HTML, ".tgsync/inbox/")
+	}
+	if !said || !saved {
+		t.Fatalf("messages %+v", f.api.Messages(thread))
+	}
+	matches, _ := filepath.Glob(filepath.Join(f.root, "demo", ".tgsync", "inbox", "*"+name))
+	if len(matches) != 1 {
+		t.Fatalf("saved audio: %v", matches)
+	}
+}
+
 func TestVoiceDisabled(t *testing.T) {
 	f := setup(t) // f.r.STT stays nil
 	f.send(f.r.Topics.Control(), "/new demo")
 	thread := f.sessionThread(t)
+	f.api.AddFile("v1", []byte("OGG"))
 	f.voice(thread, telegram.Voice{ID: "v1", Name: "voice.ogg", Duration: 4}, "")
-	if got := f.lastIn(t, thread); !strings.Contains(got, "не настроено") {
-		t.Fatalf("reply %q", got)
-	}
+	assertKeptAsFile(t, f, thread, "не настроено", "voice.ogg")
 }
 
-func TestVoiceTooLong(t *testing.T) {
+func TestVoiceTooLongIsKeptAsFile(t *testing.T) {
 	s := &fakeSTT{text: "x"}
 	f, thread := newVoiceSession(t, s)
-	f.r.STTMaxSeconds = 10
-	f.voice(thread, telegram.Voice{ID: "v1", Name: "voice.ogg", Duration: 11}, "")
-	if got := f.lastIn(t, thread); !strings.Contains(got, "Слишком длинное") || len(s.calls()) != 0 {
-		t.Fatalf("reply %q calls %v", got, s.calls())
+	f.r.STTMaxSeconds = 300
+	f.voice(thread, telegram.Voice{ID: "v1", Name: "joke.m4a", Duration: 514}, "")
+	if len(s.calls()) != 0 {
+		t.Fatalf("stt calls %v", s.calls())
+	}
+	assertKeptAsFile(t, f, thread, "Слишком длинное для распознавания", "joke.m4a")
+	if n := len(f.ag.Sessions()); n != 0 {
+		t.Fatal("a file without a caption waits for the next message")
 	}
 }
 

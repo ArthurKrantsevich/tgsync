@@ -1723,24 +1723,42 @@ func (m *Manager) ReceiveFile(ctx context.Context, thread int, name string, data
 	if s == nil {
 		return ErrUnknownSession
 	}
-	dir := filepath.Join(s.row.Cwd, filepath.FromSlash(inboxDir))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	rel, err := m.store(s, name, data)
+	if err != nil {
 		return err
 	}
-	fname := m.d.Now().Format("20060102-150405") + "-" + files.SafeName(name)
-	if err := os.WriteFile(filepath.Join(dir, fname), data, 0o600); err != nil {
-		return err
-	}
-	excludeFromGit(s.row.Cwd)
-	entry := fmt.Sprintf("%s/%s (%s)", inboxDir, fname, files.Size(int64(len(data))))
+	entry := fmt.Sprintf("%s (%s)", rel, files.Size(int64(len(data))))
 	m.mu.Lock()
 	s.inbox2 = append(s.inbox2, entry)
 	m.mu.Unlock()
 	if strings.TrimSpace(caption) == "" {
-		m.say(ctx, s, i18n.T("session.file_received", render.Escape(inboxDir+"/"+fname)), true)
+		m.say(ctx, s, i18n.T("session.file_received", render.Escape(rel)), true)
 		return nil
 	}
 	return m.Message(ctx, thread, caption)
+}
+
+// StoreFile saves a file into the project inbox without telling the agent
+// and returns its path relative to the project.
+func (m *Manager) StoreFile(thread int, name string, data []byte) (string, error) {
+	s := m.lookup(thread)
+	if s == nil {
+		return "", ErrUnknownSession
+	}
+	return m.store(s, name, data)
+}
+
+func (m *Manager) store(s *sess, name string, data []byte) (string, error) {
+	dir := filepath.Join(s.row.Cwd, filepath.FromSlash(inboxDir))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	fname := m.d.Now().Format("20060102-150405") + "-" + files.SafeName(name)
+	if err := os.WriteFile(filepath.Join(dir, fname), data, 0o600); err != nil {
+		return "", err
+	}
+	excludeFromGit(s.row.Cwd)
+	return inboxDir + "/" + fname, nil
 }
 
 // excludeFromGit keeps the inbox out of commits via .git/info/exclude.

@@ -21,14 +21,18 @@ func (r *Router) voice(ctx context.Context, u telegram.Update) {
 		return
 	case !r.Sessions.Owns(thread):
 		return
+	case v.Size > telegram.MaxDownload:
+		r.reply(ctx, thread, i18n.T("router.voice.too_big"))
+		return
+	// Without a transcript the recording still reaches the agent as a file,
+	// e.g. a long audio file sent as a voice sample.
 	case r.STT == nil:
 		r.reply(ctx, thread, i18n.T("router.voice.no_stt"))
+		r.keepAudio(ctx, u)
 		return
 	case r.STTMaxSeconds > 0 && v.Duration > r.STTMaxSeconds:
 		r.reply(ctx, thread, i18n.T("router.voice.too_long", v.Duration, r.STTMaxSeconds))
-		return
-	case v.Size > telegram.MaxDownload:
-		r.reply(ctx, thread, i18n.T("router.voice.too_big"))
+		r.keepAudio(ctx, u)
 		return
 	}
 	status, err := r.API.SendMessage(ctx, thread, i18n.T("router.voice.working"), nil, true)
@@ -36,7 +40,7 @@ func (r *Router) voice(ctx context.Context, u telegram.Update) {
 		r.warn(ctx, thread, err)
 		return
 	}
-	text, err := r.transcribe(ctx, v)
+	data, text, err := r.transcribe(ctx, v)
 	switch {
 	case err != nil:
 		_ = r.API.EditMessage(ctx, status, "⚠️ STT: "+render.Escape(err.Error()), nil)
@@ -50,7 +54,24 @@ func (r *Router) voice(ctx context.Context, u telegram.Update) {
 	if r.Broker.HandleText(ctx, thread, text) {
 		return
 	}
-	r.report(ctx, thread, r.Sessions.MessageFrom(ctx, thread, voicePrompt(text, strings.TrimSpace(u.Text)), u.MessageID))
+	// The recording stays in the project inbox so the agent can use the
+	// audio itself, e.g. as a voice sample; a failed save only loses that.
+	audio, err := r.Sessions.StoreFile(thread, v.Name, data)
+	if err != nil {
+		r.warn(ctx, thread, err)
+	}
+	r.report(ctx, thread, r.Sessions.MessageFrom(ctx, thread, voicePrompt(text, strings.TrimSpace(u.Text), audio), u.MessageID))
+}
+
+// keepAudio stores an untranscribed recording in the project inbox like any
+// other file the user sends.
+func (r *Router) keepAudio(ctx context.Context, u telegram.Update) {
+	data, err := r.API.DownloadFile(ctx, u.Voice.ID)
+	if err != nil {
+		r.warn(ctx, u.ThreadID, err)
+		return
+	}
+	r.report(ctx, u.ThreadID, r.Sessions.ReceiveFile(ctx, u.ThreadID, u.Voice.Name, data, strings.TrimSpace(u.Text)))
 }
 
 // maxShown keeps the transcript message under Telegram's 4096-character limit.
@@ -64,7 +85,8 @@ func cut(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-func (r *Router) transcribe(ctx context.Context, v *telegram.Voice) (string, error) {
+// transcribe downloads the recording and returns it with its transcript.
+func (r *Router) transcribe(ctx context.Context, v *telegram.Voice) ([]byte, string, error) {
 	if r.STTTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, r.STTTimeout)
@@ -72,19 +94,24 @@ func (r *Router) transcribe(ctx context.Context, v *telegram.Voice) (string, err
 	}
 	data, err := r.API.DownloadFile(ctx, v.ID)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-	return r.STT.Transcribe(ctx, bytes.NewReader(data), v.Name)
+	text, err := r.STT.Transcribe(ctx, bytes.NewReader(data), v.Name)
+	return data, text, err
 }
 
 // voicePrompt wraps a transcript so the agent confirms before acting.
 // The transcript comes first: the session names its topic after the first line.
-func voicePrompt(text, caption string) string {
+// audio is the saved recording's path in the project, if any.
+func voicePrompt(text, caption, audio string) string {
 	var b strings.Builder
 	b.WriteString(text)
 	b.WriteString("\n\n[Voice message above — speech recognition may contain errors]")
 	if caption != "" {
 		b.WriteString("\n[Caption: " + caption + "]")
+	}
+	if audio != "" {
+		b.WriteString("\n[Audio: " + audio + "]")
 	}
 	b.WriteString("\nBefore doing anything, restate in one or two sentences how you understood the task and wait for my confirmation. Do not start work yet.")
 	return b.String()
