@@ -638,7 +638,7 @@ At most 5 files are sent automatically per turn.
 
 - Enabled when `STT_URL` is set. Only a self-hosted, OpenAI-compatible server
   is used (a compose file for speaches/faster-whisper is in
-  `deploy/stt/compose.yaml`, listening on `127.0.0.1:8000`).
+  `deploy/stt/compose.yaml`, listening on `127.0.0.1:2015`).
 - Accepted: voice messages and audio files in a session topic. Refused: in
   the control topic, longer than `STT_MAX_SECONDS` (default 300), larger than
   20 MB.

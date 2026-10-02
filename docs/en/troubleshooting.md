@@ -36,7 +36,7 @@ The quoted strings below are what you will see with the English interface (`BOT_
 | `SUDO_MODE must be off, env or telegram` | Typo | Use one of the three. |
 | `SUDO_MODE=env requires SUDO_PASSWORD` | Empty password in `env` mode | Set `SUDO_PASSWORD`, or use another mode. |
 | `SHOW_HOOK_OUTPUT must be true or false` | Other value | `true`/`false`. |
-| `STT_URL must be an http(s) URL like http://127.0.0.1:8000` | Missing scheme (`127.0.0.1:8000`) | Add `http://`. |
+| `STT_URL must be an http(s) URL like http://127.0.0.1:2015` | Missing scheme (`127.0.0.1:2015`) | Add `http://`. |
 | `STT_MAX_SECONDS must be a positive integer` | `0`, negative, text | Use a positive number of seconds. |
 | `TGSYNC_HOME=…: directory does not exist` | `TGSYNC_HOME` points to a missing folder | Create it or fix the path. |
 | `.env: …` | Syntax error in `.env` (e.g. unbalanced quotes) | Keep lines as `NAME=value`, no quotes needed. |
@@ -134,8 +134,8 @@ Messages in the group get no reply at all.
 | `🎙 Voice messages work in a session topic.` | Sent in the control topic | Send it in a session topic. |
 | `🎙 Too long: N s, the maximum is M s.` | Longer than `STT_MAX_SECONDS` | Raise the limit or split the message. |
 | `⚠️ The audio is over 20 MB …` | Telegram does not let bots download larger files | Send a shorter recording. |
-| `⚠️ STT: … connection refused` | STT server is not running or listens elsewhere | `docker compose -f deploy/stt/compose.yaml ps`; `curl http://127.0.0.1:8000/v1/models`. In Docker, `127.0.0.1` is the container itself: use the host address. |
-| `⚠️ STT: HTTP 404: …` / model not found | Model not downloaded, or `STT_MODEL` differs | `curl -X POST http://127.0.0.1:8000/v1/models/Systran/faster-whisper-small`, or fix `STT_MODEL`. |
+| `⚠️ STT: … connection refused` | STT server is not running or listens elsewhere | `docker compose -f deploy/stt/compose.yaml ps`; `curl http://127.0.0.1:2015/v1/models`. In Docker, `127.0.0.1` is the container itself: use the host address. |
+| `⚠️ STT: HTTP 404: …` / model not found | Model not downloaded, or `STT_MODEL` differs | `curl -X POST http://127.0.0.1:2015/v1/models/Systran/faster-whisper-small`, or fix `STT_MODEL`. |
 | `⚠️ STT: context deadline exceeded` | Transcription slower than `STT_TIMEOUT` (first request loads the model) | Try again; raise `STT_TIMEOUT` (e.g. `180s`); use a smaller model or a GPU. |
 | `⚠️ STT: unexpected server response` | `STT_URL` points to something that is not an OpenAI-compatible STT API | Point it to the server root, without `/v1`. |
 

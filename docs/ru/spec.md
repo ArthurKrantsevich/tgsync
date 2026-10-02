@@ -654,7 +654,7 @@ sudo работает через одобрение в Telegram и `SUDO_ASKPASS
 
 - Включаются, если задан `STT_URL`. Используется только собственный
   OpenAI-совместимый сервер (compose-файл для speaches/faster-whisper лежит в
-  `deploy/stt/compose.yaml`, слушает `127.0.0.1:8000`).
+  `deploy/stt/compose.yaml`, слушает `127.0.0.1:2015`).
 - Принимаются голосовые и аудиофайлы в теме сессии. Отклоняются: в теме
   управления, длиннее `STT_MAX_SECONDS` (по умолчанию 300), больше 20 МБ.
 - Запрос: `POST <STT_URL>/v1/audio/transcriptions`, multipart с `file`,

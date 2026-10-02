@@ -108,7 +108,7 @@
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
-| `STT_URL` | пусто (голосовые выкл.) | Адрес своего сервера распознавания с API как у OpenAI, например `http://127.0.0.1:8000`. Только `http` или `https`. Нода шлёт `POST {STT_URL}/v1/audio/transcriptions`. |
+| `STT_URL` | пусто (голосовые выкл.) | Адрес своего сервера распознавания с API как у OpenAI, например `http://127.0.0.1:2015`. Только `http` или `https`. Нода шлёт `POST {STT_URL}/v1/audio/transcriptions`. |
 | `STT_MODEL` | `Systran/faster-whisper-small` | Имя модели для сервера. |
 | `STT_TIMEOUT` | `60s` | Лимит на скачивание и распознавание одного сообщения. `0` снимает этот лимит, но HTTP-запрос всё равно обрывается через 2 минуты. |
 | `STT_MAX_SECONDS` | `300` | Самое длинное голосовое в секундах. На более длинные бот отвечает отказом. |
@@ -147,14 +147,14 @@ user ALL=(root) NOPASSWD: /usr/bin/systemctl restart myapp
    ```bash
    docker compose -f deploy/stt/compose.yaml up -d
    ```
-   Он слушает только `127.0.0.1:8000`.
+   Он слушает только `127.0.0.1:2015`.
 2. Один раз скачай модель (~480 МБ, остаётся в volume Docker):
    ```bash
-   curl -X POST http://127.0.0.1:8000/v1/models/Systran/faster-whisper-small
+   curl -X POST http://127.0.0.1:2015/v1/models/Systran/faster-whisper-small
    ```
 3. В `.env`:
    ```
-   STT_URL=http://127.0.0.1:8000
+   STT_URL=http://127.0.0.1:2015
    ```
 4. Перезапусти ноду.
 
@@ -223,7 +223,7 @@ IDLE_TIMEOUT=30m
 STALL_WARN=10m
 MAX_TURN_DURATION=3h
 AUTO_SEND_GLOBS=**/*.md,**/*.pdf,reports/*.html
-STT_URL=http://127.0.0.1:8000
+STT_URL=http://127.0.0.1:2015
 ```
 
 `profiles.yaml`: выключить один плагин в сессиях из Telegram, а песочницу держать только на настройках проекта:

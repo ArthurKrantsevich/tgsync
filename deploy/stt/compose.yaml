@@ -1,8 +1,8 @@
 # Self-hosted speech-to-text for tgsync voice messages (no cloud services).
 # Start:  docker compose -f deploy/stt/compose.yaml up -d
 # Model (once, stays in the volume):
-#   curl -X POST http://127.0.0.1:8000/v1/models/Systran/faster-whisper-small
-# Then set STT_URL=http://127.0.0.1:8000 in ~/.config/tgsync/.env and restart tgsync.
+#   curl -X POST http://127.0.0.1:2015/v1/models/Systran/faster-whisper-small
+# Then set STT_URL=http://127.0.0.1:2015 in ~/.config/tgsync/.env and restart tgsync.
 # Moving to a GPU box: use the latest-cuda image there (with --gpus), a larger
 # model, and point STT_URL and STT_MODEL at it.
 services:
@@ -10,8 +10,9 @@ services:
     image: ghcr.io/speaches-ai/speaches:latest-cpu
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:2015:2015"
     environment:
+      UVICORN_PORT: "2015"
       WHISPER__COMPUTE_TYPE: int8
       ENABLE_UI: "false"
     volumes:

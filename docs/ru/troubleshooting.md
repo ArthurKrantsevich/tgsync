@@ -34,7 +34,7 @@
 | `SUDO_MODE must be off, env or telegram` | Опечатка | Одно из трёх. |
 | `SUDO_MODE=env requires SUDO_PASSWORD` | В режиме `env` пустой пароль | Задай `SUDO_PASSWORD` или выбери другой режим. |
 | `SHOW_HOOK_OUTPUT must be true or false` | Другое значение | `true`/`false`. |
-| `STT_URL must be an http(s) URL like http://127.0.0.1:8000` | Нет схемы (`127.0.0.1:8000`) | Допиши `http://`. |
+| `STT_URL must be an http(s) URL like http://127.0.0.1:2015` | Нет схемы (`127.0.0.1:2015`) | Допиши `http://`. |
 | `STT_MAX_SECONDS must be a positive integer` | `0`, отрицательное, текст | Положительное число секунд. |
 | `TGSYNC_HOME=…: directory does not exist` | `TGSYNC_HOME` указывает на несуществующую папку | Создай её или исправь путь. |
 | `.env: …` | Синтаксическая ошибка в `.env` (например, незакрытая кавычка) | Строки вида `ИМЯ=значение`, кавычки не нужны. |
@@ -132,8 +132,8 @@
 | `🎙 Голосовые работают в теме сессии.` | Голосовое отправлено в тему управления | Отправь в тему сессии. |
 | `🎙 Слишком длинное: N с, максимум M с.` | Длиннее `STT_MAX_SECONDS` | Подними лимит или разбей на части. |
 | `⚠️ Аудио больше 20 МБ …` | Telegram не даёт ботам скачивать файлы больше | Запиши покороче. |
-| `⚠️ STT: … connection refused` | Сервер распознавания не запущен или слушает другой адрес | `docker compose -f deploy/stt/compose.yaml ps`; `curl http://127.0.0.1:8000/v1/models`. Если нода в Docker, `127.0.0.1` — это сам контейнер: укажи адрес хоста. |
-| `⚠️ STT: HTTP 404: …` / модель не найдена | Модель не скачана или `STT_MODEL` другая | `curl -X POST http://127.0.0.1:8000/v1/models/Systran/faster-whisper-small` или исправь `STT_MODEL`. |
+| `⚠️ STT: … connection refused` | Сервер распознавания не запущен или слушает другой адрес | `docker compose -f deploy/stt/compose.yaml ps`; `curl http://127.0.0.1:2015/v1/models`. Если нода в Docker, `127.0.0.1` — это сам контейнер: укажи адрес хоста. |
+| `⚠️ STT: HTTP 404: …` / модель не найдена | Модель не скачана или `STT_MODEL` другая | `curl -X POST http://127.0.0.1:2015/v1/models/Systran/faster-whisper-small` или исправь `STT_MODEL`. |
 | `⚠️ STT: context deadline exceeded` | Распознавание дольше `STT_TIMEOUT` (первый запрос ещё и загружает модель) | Повтори; подними `STT_TIMEOUT` (например, `180s`); возьми модель поменьше или GPU. |
 | `⚠️ STT: непонятный ответ сервера` | `STT_URL` указывает не на STT API, совместимый с OpenAI | Укажи корень сервера, без `/v1`. |
 

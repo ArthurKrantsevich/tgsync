@@ -12,7 +12,7 @@ func init() {
 		"config.sudo_mode":     {EN: "SUDO_MODE must be off, env or telegram", RU: "SUDO_MODE должен быть off, env или telegram"},
 		"config.duration":      {EN: "%s must be a duration like 30m or 2h, got %q", RU: "%s должно быть длительностью вроде 30m или 2h, а не %q"},
 		"config.bool":          {EN: "%s must be true or false", RU: "%s должно быть true или false"},
-		"config.stt_url":       {EN: "STT_URL must be an http(s) URL like http://127.0.0.1:8000", RU: "STT_URL должен быть http(s)-адресом, например http://127.0.0.1:8000"},
+		"config.stt_url":       {EN: "STT_URL must be an http(s) URL like http://127.0.0.1:2015", RU: "STT_URL должен быть http(s)-адресом, например http://127.0.0.1:2015"},
 		"config.language":      {EN: "BOT_LANGUAGE must be en or ru, got %q", RU: "BOT_LANGUAGE должен быть en или ru, а не %q"},
 		"config.user_id":       {EN: "invalid user id %q", RU: "неверный id пользователя %q"},
 	})
