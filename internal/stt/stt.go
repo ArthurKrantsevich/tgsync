@@ -29,7 +29,7 @@ type Transcriber interface {
 
 // Client calls POST {URL}/v1/audio/transcriptions.
 type Client struct {
-	URL   string // base URL, for example http://127.0.0.1:8000
+	URL   string // base URL, for example http://127.0.0.1:2015
 	Model string
 	HTTP  *http.Client // nil means a client built from Timeout (or defaultTimeout)
 	// Timeout bounds the HTTP call when HTTP is nil. It is independent of

@@ -638,10 +638,11 @@ At most 5 files are sent automatically per turn.
 
 - Enabled when `STT_URL` is set. Only a self-hosted, OpenAI-compatible server
   is used (a compose file for speaches/faster-whisper is in
-  `deploy/stt/compose.yaml`, listening on `127.0.0.1:8000`).
+  `deploy/stt/compose.yaml`, listening on `127.0.0.1:2015`).
 - Accepted: voice messages and audio files in a session topic. Refused: in
-  the control topic, longer than `STT_MAX_SECONDS` (default 300), larger than
-  20 MB.
+  the control topic and larger than 20 MB. Without `STT_URL`, or when longer
+  than `STT_MAX_SECONDS` (default 300), the recording is not transcribed and
+  is saved to the project inbox like any other file.
 - Request: `POST <STT_URL>/v1/audio/transcriptions`, multipart with `file`,
   `model` (`STT_MODEL`) and `response_format=json`; the response body is read
   up to 1 MB; the `text` field is used.
@@ -650,8 +651,9 @@ At most 5 files are sent automatically per turn.
 - The transcript (≤3500 characters) is shown in an expandable quote. If a
   "✍ Type answer" question is pending, the transcript is its answer.
   Otherwise the agent receives the transcript with a note that it may contain
-  recognition errors, the caption if any, and an instruction to restate the
-  task in one or two sentences and wait for confirmation.
+  recognition errors, the caption if any, the path of the recording saved to
+  the project inbox, and an instruction to restate the task in one or two
+  sentences and wait for confirmation.
 - Transcription runs in the topic's worker: messages sent in that topic
   meanwhile are handled after it.
 

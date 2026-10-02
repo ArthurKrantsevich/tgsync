@@ -108,10 +108,10 @@ Syntax: one `NAME=value` per line, `#` starts a comment. Leading and trailing sp
 
 | Variable | Default | Description |
 |---|---|---|
-| `STT_URL` | empty (voice off) | Base URL of a self-hosted OpenAI-compatible speech-to-text server, e.g. `http://127.0.0.1:8000`. Must be `http` or `https`. tgsync calls `POST {STT_URL}/v1/audio/transcriptions`. |
+| `STT_URL` | empty (voice off) | Base URL of a self-hosted OpenAI-compatible speech-to-text server, e.g. `http://127.0.0.1:2015`. Must be `http` or `https`. tgsync calls `POST {STT_URL}/v1/audio/transcriptions`. |
 | `STT_MODEL` | `Systran/faster-whisper-small` | Model name sent to the server. |
 | `STT_TIMEOUT` | `60s` | Limit for downloading plus transcribing one message. `0` removes this limit, but the HTTP request still stops after 2 minutes. |
-| `STT_MAX_SECONDS` | `300` | Longest accepted voice message, in seconds. Longer ones are refused with a reply. |
+| `STT_MAX_SECONDS` | `300` | Longest voice message that is transcribed, in seconds. Longer ones are saved to the project inbox as files. |
 
 ## Durations
 
@@ -147,20 +147,20 @@ The approval mode (☠️ everything, commands near the tgsync folder included /
    ```bash
    docker compose -f deploy/stt/compose.yaml up -d
    ```
-   It listens on `127.0.0.1:8000` only.
+   It listens on `127.0.0.1:2015` only.
 2. Download the model once (about 480 MB, kept in a Docker volume):
    ```bash
-   curl -X POST http://127.0.0.1:8000/v1/models/Systran/faster-whisper-small
+   curl -X POST http://127.0.0.1:2015/v1/models/Systran/faster-whisper-small
    ```
 3. Set in `.env`:
    ```
-   STT_URL=http://127.0.0.1:8000
+   STT_URL=http://127.0.0.1:2015
    ```
 4. Restart the node.
 
 The `small` model on a CPU transcribes a minute of audio in 10–20 seconds. On a machine with a GPU, run the same server with the `latest-cuda` image and a larger model, then change `STT_URL` and `STT_MODEL`. Audio never goes to a cloud service; if the STT server runs on another machine, put it behind a VPN or TLS.
 
-Voice messages and audio files (up to Telegram's 20 MB bot download limit) are transcribed and sent to the agent as text.
+Voice messages and audio files (up to Telegram's 20 MB bot download limit) are transcribed and sent to the agent as text; the recording itself is saved to the project inbox too, so the agent can use the audio.
 
 ## profiles.yaml
 
@@ -223,7 +223,7 @@ IDLE_TIMEOUT=30m
 STALL_WARN=10m
 MAX_TURN_DURATION=3h
 AUTO_SEND_GLOBS=**/*.md,**/*.pdf,reports/*.html
-STT_URL=http://127.0.0.1:8000
+STT_URL=http://127.0.0.1:2015
 ```
 
 `profiles.yaml` that disables one plugin in Telegram sessions and keeps a sandbox project on project settings only:
