@@ -8,6 +8,24 @@ Russian version: [CHANGELOG.ru.md](CHANGELOG.ru.md).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-02
+
+Videos reach the agent, projects can be deleted from their menu, and voice recordings stay with the project. Upgrade: unpack the new archive and run the install script again. If you run the bundled STT server, it now listens on port 2015: set `STT_URL=http://127.0.0.1:2015`, recreate it with `docker compose -f deploy/stt/compose.yaml up -d` and restart the node.
+
+### Added
+
+- **Delete a project from its menu.** After confirmation the project folder is removed with all its files; a project with open sessions is refused until they are closed.
+- **Voice recordings are kept.** A transcribed voice message is also saved to the project inbox, and the agent gets its path, so it can use the audio itself, for example as a voice sample.
+
+### Changed
+
+- Without `STT_URL`, or when a voice message is longer than `STT_MAX_SECONDS`, the recording is saved to the project inbox as a file instead of being refused.
+- The bundled STT server (`deploy/stt/compose.yaml`) listens on port 2015 instead of 8000.
+
+### Fixed
+
+- A video or a round video note sent to a session topic is saved to the project inbox, with its caption as the task text. Before, the bot ignored such messages.
+
 ## [0.4.0] - 2026-09-28
 
 A ☠️ No questions approve mode for runs without any buttons, and fewer false prompts about the tgsync folder. Upgrade: unpack the new archive and run the install script again; the mode is off until you pick it in `/approve`.

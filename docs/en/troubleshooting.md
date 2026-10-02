@@ -130,9 +130,9 @@ Messages in the group get no reply at all.
 
 | Reply in the topic | Cause | Fix |
 |---|---|---|
-| `🎙 Speech recognition is not configured (STT_URL).` | `STT_URL` empty | Set it and restart ([configuration → voice](configuration.md#voice-messages)). |
+| `🎙 Speech recognition is not configured (STT_URL), so the audio is kept as a file.` | `STT_URL` empty | The recording is saved to the project inbox. To transcribe, set `STT_URL` and restart ([configuration → voice](configuration.md#voice-messages)). |
 | `🎙 Voice messages work in a session topic.` | Sent in the control topic | Send it in a session topic. |
-| `🎙 Too long: N s, the maximum is M s.` | Longer than `STT_MAX_SECONDS` | Raise the limit or split the message. |
+| `🎙 Too long to transcribe: N s, the maximum is M s. Keeping the audio as a file.` | Longer than `STT_MAX_SECONDS` | The recording is saved to the project inbox. To transcribe, raise the limit or split the message. |
 | `⚠️ The audio is over 20 MB …` | Telegram does not let bots download larger files | Send a shorter recording. |
 | `⚠️ STT: … connection refused` | STT server is not running or listens elsewhere | `docker compose -f deploy/stt/compose.yaml ps`; `curl http://127.0.0.1:2015/v1/models`. In Docker, `127.0.0.1` is the container itself: use the host address. |
 | `⚠️ STT: HTTP 404: …` / model not found | Model not downloaded, or `STT_MODEL` differs | `curl -X POST http://127.0.0.1:2015/v1/models/Systran/faster-whisper-small`, or fix `STT_MODEL`. |
